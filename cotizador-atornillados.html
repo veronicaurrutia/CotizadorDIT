@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cotizador DIT – Tratamientos Atornillados</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+
+    /* Step transitions */
+    .step { display: none; opacity: 0; transform: translateY(16px); transition: opacity .35s ease, transform .35s ease; }
+    .step.active { display: block; }
+    .step.visible { opacity: 1; transform: translateY(0); }
+
+    /* Card hover ring */
+    .option-card { transition: border-color .2s, box-shadow .2s, transform .15s; cursor: pointer; }
+    .option-card:hover { border-color: #1e3a8a; box-shadow: 0 0 0 3px #bfdbfe; transform: translateY(-2px); }
+    .option-card.selected { border-color: #1e40af; box-shadow: 0 0 0 3px #93c5fd; background: #eff6ff; }
+
+    /* Material pill */
+    .mat-pill { transition: background .15s, color .15s, box-shadow .15s; cursor: pointer; }
+    .mat-pill:hover { background: #1e40af; color: #fff; }
+    .mat-pill.selected { background: #1e3a8a; color: #fff; box-shadow: 0 0 0 3px #93c5fd; }
+
+    /* Number stepper */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    /* Pulse price animation */
+    @keyframes pop { 0%{transform:scale(.92)} 60%{transform:scale(1.04)} 100%{transform:scale(1)} }
+    .price-pop { animation: pop .3s ease forwards; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="bg-blue-900 text-white py-5 px-4 shadow-lg">
+    <div class="max-w-3xl mx-auto flex items-center gap-4">
+      <div class="bg-white text-blue-900 font-bold text-lg rounded-full w-10 h-10 flex items-center justify-center shrink-0">DIT</div>
+      <div>
+        <h1 class="text-lg sm:text-xl font-bold leading-tight">Cotizador de Tratamientos Atornillados</h1>
+        <p class="text-blue-300 text-xs mt-0.5">Seleccione las opciones para obtener su cotización referencial</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Progress bar ───────────────────────────────────────── -->
+  <div class="max-w-3xl mx-auto px-4 mt-6">
+    <div class="flex items-center gap-2 mb-2">
+      <div id="pb1" class="step-dot flex items-center gap-2">
+        <div class="w-7 h-7 rounded-full bg-blue-900 text-white text-xs font-bold flex items-center justify-center">1</div>
+        <span class="text-xs text-blue-900 font-semibold hidden sm:inline">Cantidad</span>
+      </div>
+      <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden"><div id="prog1" class="h-full bg-blue-900 rounded-full transition-all duration-500" style="width:0%"></div></div>
+      <div id="pb2" class="step-dot flex items-center gap-2">
+        <div class="w-7 h-7 rounded-full bg-slate-200 text-slate-400 text-xs font-bold flex items-center justify-center" id="dot2">2</div>
+        <span class="text-xs text-slate-400 font-semibold hidden sm:inline" id="lbl2">Manufactura</span>
+      </div>
+      <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden"><div id="prog2" class="h-full bg-blue-900 rounded-full transition-all duration-500" style="width:0%"></div></div>
+      <div id="pb3" class="step-dot flex items-center gap-2">
+        <div class="w-7 h-7 rounded-full bg-slate-200 text-slate-400 text-xs font-bold flex items-center justify-center" id="dot3">3</div>
+        <span class="text-xs text-slate-400 font-semibold hidden sm:inline" id="lbl3">Material</span>
+      </div>
+      <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden"><div id="prog3" class="h-full bg-blue-900 rounded-full transition-all duration-500" style="width:0%"></div></div>
+      <div id="pb4" class="step-dot flex items-center gap-2">
+        <div class="w-7 h-7 rounded-full bg-slate-200 text-slate-400 text-xs font-bold flex items-center justify-center" id="dot4">✓</div>
+        <span class="text-xs text-slate-400 font-semibold hidden sm:inline" id="lbl4">Resumen</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Wizard container ───────────────────────────────────── -->
+  <div class="max-w-3xl mx-auto px-4 pb-16 mt-4">
+
+    <!-- STEP 1 – Cantidad ────────────────────────────────────── -->
+    <div id="step1" class="step active">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+        <p class="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-1">Paso 1 de 3</p>
+        <h2 class="text-blue-900 text-xl sm:text-2xl font-bold mb-1">¿Cuántas piezas?</h2>
+        <p class="text-slate-500 text-sm mb-6">Incluye implantes y pónticos. Máximo 12 piezas.</p>
+
+        <!-- Stepper visual -->
+        <div class="flex items-center justify-center gap-5 my-8">
+          <button onclick="stepCount(-1)" id="btnMinus"
+            class="w-12 h-12 rounded-full border-2 border-blue-900 text-blue-900 text-2xl font-bold flex items-center justify-center hover:bg-blue-900 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            −
+          </button>
+          <div class="text-center">
+            <input id="piezasInput" type="number" min="1" max="12" value="1"
+              class="w-24 text-center text-5xl font-bold text-blue-900 border-b-2 border-blue-200 focus:border-blue-900 outline-none bg-transparent"
+              oninput="clampInput()" />
+            <p class="text-slate-400 text-xs mt-1">pieza(s)</p>
+          </div>
+          <button onclick="stepCount(1)" id="btnPlus"
+            class="w-12 h-12 rounded-full bg-blue-900 text-white text-2xl font-bold flex items-center justify-center hover:bg-blue-700 transition-colors">
+            +
+          </button>
+        </div>
+
+        <!-- Quick picks -->
+        <div class="flex flex-wrap justify-center gap-2 mb-8">
+          <p class="w-full text-center text-xs text-slate-400 mb-1">Selección rápida:</p>
+          <script>
+            for(let i=1;i<=12;i++) document.write(
+              `<button onclick="setPiezas(${i})" class="quick-btn px-3 py-1 rounded-full border border-slate-200 text-sm font-medium text-slate-600 hover:bg-blue-900 hover:text-white hover:border-blue-900 transition-colors">${i}</button>`
+            );
+          </script>
+        </div>
+
+        <button onclick="goTo(2)"
+          class="w-full bg-blue-900 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm">
+          Continuar →
+        </button>
+      </div>
+    </div>
+
+    <!-- STEP 2 – Manufactura ─────────────────────────────────── -->
+    <div id="step2" class="step">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+        <button onclick="goTo(1)" class="flex items-center gap-1 text-slate-400 hover:text-blue-900 text-xs font-medium mb-4 transition-colors">
+          ← Volver
+        </button>
+        <p class="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-1">Paso 2 de 3</p>
+        <h2 class="text-blue-900 text-xl sm:text-2xl font-bold mb-1">Tipo de manufactura</h2>
+        <p class="text-slate-500 text-sm mb-6">Elija el sistema de fabricación para su prótesis atornillada.</p>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+
+          <!-- Opción A -->
+          <div class="option-card border-2 border-slate-200 rounded-2xl p-5" onclick="selectOpcion('A')">
+            <div class="flex items-start justify-between mb-3">
+              <div class="bg-blue-100 text-blue-900 text-xs font-bold px-2.5 py-1 rounded-full">OPCIÓN A</div>
+              <div id="checkA" class="hidden w-6 h-6 bg-blue-900 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+            </div>
+            <h3 class="text-blue-900 font-bold text-base mb-1">Tbase Externo</h3>
+            <p class="text-slate-500 text-xs mb-3">Conexión hexagonal externa. Prótesis de alta precisión sobre pilar estándar.</p>
+            <div class="flex flex-wrap gap-1">
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Zirconio</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Disilicato</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D Fresada</span>
+            </div>
+          </div>
+
+          <!-- Opción B -->
+          <div class="option-card border-2 border-slate-200 rounded-2xl p-5" onclick="selectOpcion('B')">
+            <div class="flex items-start justify-between mb-3">
+              <div class="bg-blue-100 text-blue-900 text-xs font-bold px-2.5 py-1 rounded-full">OPCIÓN B</div>
+              <div id="checkB" class="hidden w-6 h-6 bg-blue-900 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+            </div>
+            <h3 class="text-blue-900 font-bold text-base mb-1">Tbase Interno</h3>
+            <p class="text-slate-500 text-xs mb-3">Conexión cónica interna. Mayor estabilidad y hermeticidad del sello.</p>
+            <div class="flex flex-wrap gap-1">
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Zirconio</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Disilicato</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D Fresada</span>
+            </div>
+          </div>
+
+          <!-- Opción C -->
+          <div class="option-card border-2 border-slate-200 rounded-2xl p-5" onclick="selectOpcion('C')">
+            <div class="flex items-start justify-between mb-3">
+              <div class="bg-blue-100 text-blue-900 text-xs font-bold px-2.5 py-1 rounded-full">OPCIÓN C</div>
+              <div id="checkC" class="hidden w-6 h-6 bg-blue-900 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+            </div>
+            <h3 class="text-blue-900 font-bold text-base mb-1">Laser Metal + Rectificado Fresado</h3>
+            <p class="text-slate-500 text-xs mb-3">Estructura metálica láser con fresado CNC de alta precisión.</p>
+            <div class="flex flex-wrap gap-1">
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Cerámica</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Disilicato</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Zirconio</span>
+              <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D</span>
+            </div>
+          </div>
+
+          <!-- Opción D -->
+          <div class="option-card border-2 border-slate-200 rounded-2xl p-5" onclick="selectOpcion('D')">
+            <div class="flex items-start justify-between mb-3">
+              <div class="bg-blue-100 text-blue-900 text-xs font-bold px-2.5 py-1 rounded-full">OPCIÓN D</div>
+              <div id="checkD" class="hidden w-6 h-6 bg-blue-900 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+            </div>
+            <h3 class="text-blue-900 font-bold text-base mb-1">Laser Metal + Rectificado</h3>
+            <p class="text-slate-500 text-xs mb-3">Elige base y corona por separado para máxima personalización.</p>
+            <div class="space-y-1.5">
+              <p class="text-xs text-slate-500 font-medium">Base:</p>
+              <div class="flex flex-wrap gap-1">
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Cofia Titanio Anodizado</span>
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Zirconio</span>
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Geométrico c/ Cerámica</span>
+              </div>
+              <p class="text-xs text-slate-500 font-medium mt-1">Corona:</p>
+              <div class="flex flex-wrap gap-1">
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Zirconio</span>
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Disilicato</span>
+                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">Resina 3D</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <button onclick="goTo(3)" id="btnGo3"
+          class="mt-6 w-full bg-blue-900 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled>
+          Continuar →
+        </button>
+      </div>
+    </div>
+
+    <!-- STEP 3 – Material ────────────────────────────────────── -->
+    <div id="step3" class="step">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+        <button onclick="goTo(2)" class="flex items-center gap-1 text-slate-400 hover:text-blue-900 text-xs font-medium mb-4 transition-colors">
+          ← Volver
+        </button>
+        <p class="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-1">Paso 3 de 3</p>
+        <h2 class="text-blue-900 text-xl sm:text-2xl font-bold mb-1" id="step3Title">Seleccione el material</h2>
+        <p class="text-slate-500 text-sm mb-6" id="step3Subtitle">Cada material determina el precio base por pieza.</p>
+
+        <!-- Materiales simples (A, B, C) -->
+        <div id="materialesSimples" class="hidden">
+          <div id="materialesGrid" class="grid sm:grid-cols-2 gap-3 mb-6"></div>
+        </div>
+
+        <!-- Opción D: Base + Corona -->
+        <div id="materialesD" class="hidden space-y-6 mb-6">
+          <!-- Base -->
+          <div>
+            <p class="text-blue-900 font-semibold text-sm mb-2">1. Seleccione la base:</p>
+            <div id="basesGrid" class="grid sm:grid-cols-3 gap-3"></div>
+          </div>
+          <!-- Corona -->
+          <div id="coronaSection" class="hidden">
+            <p class="text-blue-900 font-semibold text-sm mb-2">2. Seleccione la corona:</p>
+            <div id="coronasGrid" class="grid sm:grid-cols-3 gap-3"></div>
+          </div>
+        </div>
+
+        <button onclick="goTo(4)" id="btnGo4"
+          class="w-full bg-blue-900 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled>
+          Ver cotización →
+        </button>
+      </div>
+    </div>
+
+    <!-- STEP 4 – Resumen ─────────────────────────────────────── -->
+    <div id="step4" class="step">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+        <button onclick="goTo(3)" class="flex items-center gap-1 text-slate-400 hover:text-blue-900 text-xs font-medium mb-4 transition-colors">
+          ← Modificar selección
+        </button>
+
+        <!-- Badge -->
+        <div class="flex justify-center mb-4">
+          <div class="bg-green-100 text-green-700 text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-2">
+            <span class="w-2 h-2 bg-green-500 rounded-full inline-block"></span>
+            Cotización lista
+          </div>
+        </div>
+
+        <h2 class="text-blue-900 text-xl sm:text-2xl font-bold text-center mb-1">Resumen de cotización</h2>
+        <p class="text-slate-500 text-sm text-center mb-8">Tratamientos Atornillados DIT</p>
+
+        <!-- Desglose -->
+        <div class="bg-slate-50 rounded-xl p-5 mb-6 space-y-3">
+          <div class="flex justify-between text-sm">
+            <span class="text-slate-500">Piezas</span>
+            <span class="text-blue-900 font-semibold" id="resumenPiezas">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-slate-500">Manufactura</span>
+            <span class="text-blue-900 font-semibold" id="resumenManufactura">—</span>
+          </div>
+          <div id="resumenBaseRow" class="flex justify-between text-sm hidden">
+            <span class="text-slate-500">Base</span>
+            <span class="text-blue-900 font-semibold" id="resumenBase">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-slate-500">Material / Corona</span>
+            <span class="text-blue-900 font-semibold" id="resumenMaterial">—</span>
+          </div>
+          <div class="flex justify-between text-sm border-t border-slate-200 pt-3">
+            <span class="text-slate-500">Precio por pieza</span>
+            <span class="text-blue-900 font-semibold" id="resumenPorPieza">—</span>
+          </div>
+        </div>
+
+        <!-- Total grande -->
+        <div class="bg-blue-900 text-white rounded-2xl p-6 text-center mb-6">
+          <p class="text-blue-300 text-xs font-medium uppercase tracking-widest mb-1">Precio aproximado (incluye tornillo)</p>
+          <p class="text-4xl sm:text-5xl font-bold tracking-tight" id="totalDisplay">$0</p>
+          <p class="text-blue-300 text-xs mt-2">Valor referencial en pesos chilenos (CLP)</p>
+        </div>
+
+        <!-- Nota legal -->
+        <p class="text-slate-400 text-xs text-center leading-relaxed mb-6">
+          Esta cotización es referencial y está sujeta a evaluación clínica previa. Los precios pueden variar según diagnóstico, sistema de implante y disponibilidad de materiales.
+        </p>
+
+        <!-- Acciones -->
+        <div class="flex flex-col sm:flex-row gap-3">
+          <button onclick="resetAll()"
+            class="flex-1 border-2 border-blue-900 text-blue-900 py-3 rounded-xl font-semibold hover:bg-blue-900 hover:text-white transition-colors text-sm">
+            Nueva cotización
+          </button>
+          <button onclick="printQuote()"
+            class="flex-1 bg-blue-900 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm flex items-center justify-center gap-2">
+            🖨️ Imprimir / Guardar PDF
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /wizard container -->
+
+<!-- ── JS ────────────────────────────────────────────────────── -->
+<script>
+
+/* ── Datos ─────────────────────────────────────────────────── */
+const PRECIOS = {
+  A: {
+    'Zirconio':          195000,
+    'Disilicato':        175000,
+    'Resina 3D':         120000,
+    'Resina 3D Fresada': 145000,
+  },
+  B: {
+    'Zirconio':          215000,
+    'Disilicato':        195000,
+    'Resina 3D':         130000,
+    'Resina 3D Fresada': 158000,
+  },
+  C: {
+    'Cerámica':   235000,
+    'Disilicato': 210000,
+    'Zirconio':   240000,
+    'Resina 3D':  145000,
+  },
+  D_BASE: {
+    'Cofia Titanio Anodizado': 90000,
+    'Zirconio':                105000,
+    'Geométrico con Cerámica': 120000,
+  },
+  D_CORONA: {
+    'Zirconio':   140000,
+    'Disilicato': 120000,
+    'Resina 3D':   85000,
+  },
+};
+
+const NOMBRES_OPCION = {
+  A: 'Tbase Externo',
+  B: 'Tbase Interno',
+  C: 'Laser Metal + Rectificado Fresado',
+  D: 'Laser Metal + Rectificado',
+};
+
+/* ── Estado ────────────────────────────────────────────────── */
+const state = { piezas:1, opcion:null, material:null, base:null, corona:null };
+let currentStep = 1;
+
+/* ── Navegación ────────────────────────────────────────────── */
+function goTo(n) {
+  // Validaciones
+  if (n === 3 && !state.opcion) return;
+  if (n === 4 && !canProceedFromStep3()) return;
+
+  if (n === 3) buildStep3();
+  if (n === 4) buildSummary();
+
+  const prev = document.getElementById('step' + currentStep);
+  prev.classList.remove('visible');
+  setTimeout(() => { prev.classList.remove('active'); }, 350);
+
+  currentStep = n;
+  const next = document.getElementById('step' + n);
+  next.classList.add('active');
+  requestAnimationFrame(() => requestAnimationFrame(() => next.classList.add('visible')));
+
+  updateProgress(n);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function canProceedFromStep3() {
+  if (!state.opcion) return false;
+  if (state.opcion === 'D') return state.base && state.corona;
+  return !!state.material;
+}
+
+/* ── Progress bar ──────────────────────────────────────────── */
+function updateProgress(step) {
+  const dots = [null, 'dot2','dot3','dot4'];
+  const lbls = [null, 'lbl2','lbl3','lbl4'];
+  const progs= [null, 'prog1','prog2','prog3'];
+
+  for (let i=1; i<=3; i++) {
+    const d = document.getElementById(dots[i]);
+    const l = document.getElementById(lbls[i]);
+    const p = document.getElementById(progs[i]);
+    if (step > i) {
+      d.className = 'w-7 h-7 rounded-full bg-blue-900 text-white text-xs font-bold flex items-center justify-center';
+      l.className = 'text-xs text-blue-900 font-semibold hidden sm:inline';
+      p.style.width = '100%';
+    } else if (step === i) {
+      d.className = 'w-7 h-7 rounded-full bg-blue-900 text-white text-xs font-bold flex items-center justify-center';
+      l.className = 'text-xs text-blue-900 font-semibold hidden sm:inline';
+      if (i > 1) document.getElementById(progs[i-1]).style.width = '100%';
+    } else {
+      d.className = 'w-7 h-7 rounded-full bg-slate-200 text-slate-400 text-xs font-bold flex items-center justify-center';
+      l.className = 'text-xs text-slate-400 font-semibold hidden sm:inline';
+    }
+  }
+  // dot4 / lbl4
+  const d4 = document.getElementById('dot4');
+  const l4 = document.getElementById('lbl4');
+  if (step === 4) {
+    d4.className = 'w-7 h-7 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center';
+    l4.className  = 'text-xs text-green-600 font-semibold hidden sm:inline';
+    document.getElementById('prog3').style.width = '100%';
+  }
+}
+
+/* ── Stepper de piezas ─────────────────────────────────────── */
+function stepCount(delta) {
+  const inp = document.getElementById('piezasInput');
+  let v = parseInt(inp.value) + delta;
+  v = Math.min(12, Math.max(1, v));
+  inp.value = v;
+  state.piezas = v;
+}
+
+function clampInput() {
+  const inp = document.getElementById('piezasInput');
+  let v = parseInt(inp.value) || 1;
+  v = Math.min(12, Math.max(1, v));
+  inp.value = v;
+  state.piezas = v;
+}
+
+function setPiezas(n) {
+  document.getElementById('piezasInput').value = n;
+  state.piezas = n;
+  // Highlight quick btn
+  document.querySelectorAll('.quick-btn').forEach((b, i) => {
+    b.className = b.className.replace(/bg-blue-900 text-white border-blue-900/, '');
+    if (i + 1 === n) b.classList.add('bg-blue-900','text-white','border-blue-900');
+    else b.classList.remove('bg-blue-900','text-white','border-blue-900');
+  });
+}
+
+/* ── Selección de opción ───────────────────────────────────── */
+function selectOpcion(op) {
+  state.opcion = op;
+  state.material = null; state.base = null; state.corona = null;
+
+  document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+  ['A','B','C','D'].forEach(x => document.getElementById('check'+x).classList.add('hidden'));
+
+  event.currentTarget.classList.add('selected');
+  document.getElementById('check'+op).classList.remove('hidden');
+
+  document.getElementById('btnGo3').disabled = false;
+}
+
+/* ── Construir step 3 ──────────────────────────────────────── */
+function buildStep3() {
+  const op = state.opcion;
+  document.getElementById('materialesSimples').classList.add('hidden');
+  document.getElementById('materialesD').classList.add('hidden');
+  document.getElementById('coronaSection').classList.add('hidden');
+  document.getElementById('btnGo4').disabled = true;
+  state.material = null; state.base = null; state.corona = null;
+
+  if (op !== 'D') {
+    document.getElementById('step3Title').textContent = 'Seleccione el material';
+    document.getElementById('step3Subtitle').textContent = 'El material define el precio base por pieza.';
+    document.getElementById('materialesSimples').classList.remove('hidden');
+    const grid = document.getElementById('materialesGrid');
+    grid.innerHTML = '';
+    Object.entries(PRECIOS[op]).forEach(([mat, precio]) => {
+      const d = document.createElement('div');
+      d.className = 'mat-pill border-2 border-slate-200 rounded-xl p-4 text-center';
+      d.onclick = () => selectMaterial(mat, d);
+      d.innerHTML = `
+        <p class="text-blue-900 font-semibold text-sm">${mat}</p>
+        <p class="text-slate-400 text-xs mt-1">${formatCLP(precio)} / pieza</p>`;
+      grid.appendChild(d);
+    });
+  } else {
+    document.getElementById('step3Title').textContent = 'Configure base y corona';
+    document.getElementById('step3Subtitle').textContent = 'Elija primero la base y luego la corona de la prótesis.';
+    document.getElementById('materialesD').classList.remove('hidden');
+
+    // Bases
+    const bg = document.getElementById('basesGrid');
+    bg.innerHTML = '';
+    Object.entries(PRECIOS.D_BASE).forEach(([base, precio]) => {
+      const d = document.createElement('div');
+      d.className = 'mat-pill border-2 border-slate-200 rounded-xl p-4 text-center';
+      d.onclick = () => selectBase(base, d);
+      d.innerHTML = `
+        <p class="text-blue-900 font-semibold text-xs leading-tight">${base}</p>
+        <p class="text-slate-400 text-xs mt-1">${formatCLP(precio)}</p>`;
+      bg.appendChild(d);
+    });
+
+    // Coronas
+    const cg = document.getElementById('coronasGrid');
+    cg.innerHTML = '';
+    Object.entries(PRECIOS.D_CORONA).forEach(([cor, precio]) => {
+      const d = document.createElement('div');
+      d.className = 'mat-pill border-2 border-slate-200 rounded-xl p-4 text-center';
+      d.onclick = () => selectCorona(cor, d);
+      d.innerHTML = `
+        <p class="text-blue-900 font-semibold text-xs leading-tight">${cor}</p>
+        <p class="text-slate-400 text-xs mt-1">${formatCLP(precio)}</p>`;
+      cg.appendChild(d);
+    });
+  }
+}
+
+function selectMaterial(mat, el) {
+  document.querySelectorAll('#materialesGrid .mat-pill').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
+  state.material = mat;
+  document.getElementById('btnGo4').disabled = false;
+}
+
+function selectBase(base, el) {
+  document.querySelectorAll('#basesGrid .mat-pill').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
+  state.base = base;
+  state.corona = null;
+  document.querySelectorAll('#coronasGrid .mat-pill').forEach(p => p.classList.remove('selected'));
+  document.getElementById('coronaSection').classList.remove('hidden');
+  document.getElementById('btnGo4').disabled = true;
+}
+
+function selectCorona(cor, el) {
+  document.querySelectorAll('#coronasGrid .mat-pill').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
+  state.corona = cor;
+  document.getElementById('btnGo4').disabled = !(state.base && state.corona);
+}
+
+/* ── Construir resumen ─────────────────────────────────────── */
+function buildSummary() {
+  const { piezas, opcion, material, base, corona } = state;
+  let precioPorPieza = 0;
+
+  if (opcion === 'D') {
+    precioPorPieza = PRECIOS.D_BASE[base] + PRECIOS.D_CORONA[corona];
+  } else {
+    precioPorPieza = PRECIOS[opcion][material];
+  }
+
+  const total = precioPorPieza * piezas;
+
+  document.getElementById('resumenPiezas').textContent = piezas + ' pieza' + (piezas > 1 ? 's' : '');
+  document.getElementById('resumenManufactura').textContent = `${opcion} – ${NOMBRES_OPCION[opcion]}`;
+  document.getElementById('resumenMaterial').textContent = opcion === 'D' ? corona : material;
+  document.getElementById('resumenPorPieza').textContent = formatCLP(precioPorPieza);
+
+  const baseRow = document.getElementById('resumenBaseRow');
+  if (opcion === 'D') {
+    baseRow.classList.remove('hidden');
+    document.getElementById('resumenBase').textContent = base;
+  } else {
+    baseRow.classList.add('hidden');
+  }
+
+  const el = document.getElementById('totalDisplay');
+  el.textContent = formatCLP(total);
+  el.classList.remove('price-pop');
+  void el.offsetWidth;
+  el.classList.add('price-pop');
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+function resetAll() {
+  state.piezas = 1; state.opcion = null; state.material = null; state.base = null; state.corona = null;
+  document.getElementById('piezasInput').value = 1;
+  document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+  ['A','B','C','D'].forEach(x => document.getElementById('check'+x).classList.add('hidden'));
+  document.getElementById('btnGo3').disabled = true;
+  document.getElementById('btnGo4').disabled = true;
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('bg-blue-900','text-white','border-blue-900'));
+
+  // Hide current step, show step 1
+  document.getElementById('step' + currentStep).classList.remove('visible', 'active');
+  currentStep = 1;
+  const s1 = document.getElementById('step1');
+  s1.classList.add('active');
+  requestAnimationFrame(() => requestAnimationFrame(() => s1.classList.add('visible')));
+
+  // Reset progress
+  ['dot2','dot3','dot4'].forEach(id => {
+    document.getElementById(id).className = 'w-7 h-7 rounded-full bg-slate-200 text-slate-400 text-xs font-bold flex items-center justify-center';
+  });
+  ['lbl2','lbl3','lbl4'].forEach(id => {
+    document.getElementById(id).className = 'text-xs text-slate-400 font-semibold hidden sm:inline';
+  });
+  ['prog1','prog2','prog3'].forEach(id => document.getElementById(id).style.width = '0%');
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function printQuote() { window.print(); }
+
+/* ── Utils ─────────────────────────────────────────────────── */
+function formatCLP(n) {
+  return n.toLocaleString('es-CL', { style:'currency', currency:'CLP', minimumFractionDigits:0 });
+}
+
+/* ── Init: show step 1 ─────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  const s1 = document.getElementById('step1');
+  s1.classList.add('active');
+  requestAnimationFrame(() => requestAnimationFrame(() => s1.classList.add('visible')));
+});
+</script>
+
+<!-- Print styles -->
+<style>
+@media print {
+  header, #step1, #step2, #step3, button { display: none !important; }
+  #step4 { display: block !important; opacity: 1 !important; transform: none !important; }
+  body { background: white; }
+}
+</style>
+
+</body>
+</html>
