@@ -1,7 +1,8 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import RehabilitacionSelector from "./RehabilitacionSelector";
+import logoDIT from "./img/logoDIT.jpeg";
 
 const QUICK_FILTERS = ["Todos", "Zirconio", "Disilicato", "Metal-Ceramica"];
 
@@ -205,6 +206,67 @@ function buildCorrelativeOrderId(sequence) {
   return `DIT-ORD-${String(sequence).padStart(6, "0")}`;
 }
 
+function getOrderMaterialSummary(order) {
+  const detail = order?.producto?.detalle;
+  if (!detail) {
+    return order?.producto?.material ?? "-";
+  }
+
+  if (detail.material) {
+    const parts = [detail.material];
+    if (detail.sku) {
+      parts.push(`SKU ${detail.sku}`);
+    }
+    if (detail.subtipo) {
+      parts.push(detail.subtipo);
+    }
+    if (detail.color) {
+      parts.push(`Color ${detail.color}`);
+    }
+    return parts.join("  —  ");
+  }
+
+  if (detail.pilar) {
+    const parts = [detail.pilar];
+    if (detail.pilarMaterial) {
+      parts.push(detail.pilarMaterial);
+    }
+    if (detail.color) {
+      parts.push(`Color ${detail.color}`);
+    }
+    return parts.join(" — ");
+  }
+
+  if (detail.corona) {
+    const parts = [detail.corona];
+    if (detail.color) {
+      parts.push(`Color ${detail.color}`);
+    }
+    return parts.join(" — ");
+  }
+
+  return order?.producto?.material ?? "-";
+}
+
+function getOrderApproximateTotal(order) {
+  const detail = order?.producto?.detalle;
+  if (!detail) {
+    return null;
+  }
+
+  if (typeof detail.precio === "number") {
+    return detail.requiereCantidadEspecial && detail.cantidadEspecial
+      ? detail.precio * detail.cantidadEspecial
+      : detail.precio;
+  }
+
+  if (typeof detail.precioCorona === "number") {
+    return detail.precioCorona;
+  }
+
+  return null;
+}
+
 function isValidDentalFile(fileName) {
   return /\.(stl|dcm|dicom|zip)$/i.test(fileName);
 }
@@ -248,7 +310,15 @@ export default function App() {
   const [rehabSelectorVersion, setRehabSelectorVersion] = useState(0);
 
   const [modalCartItems, setModalCartItems] = useState([]);
+  const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [showAddedNotification, setShowAddedNotification] = useState(false);
+  
+  // Sistema de cupones
+  const [generatedCoupon, setGeneratedCoupon] = useState(null);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponMessage, setCouponMessage] = useState("");
+  
   const allTypes = useMemo(
     () => ["Todos", ...new Set(productosFija.map((item) => item.tipoProducto))],
     []
@@ -293,6 +363,8 @@ export default function App() {
 
   const modalAvailability = { label: "Listo en 5 dias habiles", className: "bg-blue-100 text-blue-700" };
   const modalEstimatedTotal = modalPrice * selectedQty;
+  const activeOrderMaterialSummary = currentOrder ? getOrderMaterialSummary(currentOrder) : "-";
+  const activeOrderApproximateTotal = currentOrder ? getOrderApproximateTotal(currentOrder) : null;
 
   const cartSubtotal = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.total, 0),
@@ -300,6 +372,10 @@ export default function App() {
   );
   const cartTax = Math.round(cartSubtotal * 0.19);
   const cartGrandTotal = cartSubtotal + cartTax;
+  
+  // Calcular total con descuento si hay cupón aplicado
+  const discountAmount = appliedCoupon ? Math.round(cartGrandTotal * appliedCoupon.discount) : 0;
+  const finalTotal = cartGrandTotal - discountAmount;
 
   const openProduct = (product) => {
     setActiveProduct(product);
@@ -382,6 +458,51 @@ export default function App() {
     return "";
   };
 
+  // Generar cupón automáticamente cuando se ingresa email válido
+  const generateCouponFromEmail = useCallback((email) => {
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !generatedCoupon) {
+      const couponCode = `BIENVENIDO10`;
+      setGeneratedCoupon({
+        code: couponCode,
+        discount: 0.10,
+        email: email
+      });
+      setCouponMessage("");
+    }
+  }, [generatedCoupon]);
+
+  // Watcher para email válido - generar cupón automático
+  useEffect(() => {
+    if (patientData.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientData.email)) {
+      generateCouponFromEmail(patientData.email);
+    }
+  }, [patientData.email, generateCouponFromEmail]);
+
+  // Aplicar cupón
+  const applyCoupon = () => {
+    const inputCode = couponInput.trim().toUpperCase();
+    
+    if (!inputCode) {
+      setCouponMessage("Ingresa un código de cupón");
+      return;
+    }
+
+    if (generatedCoupon && inputCode === generatedCoupon.code) {
+      setAppliedCoupon(generatedCoupon);
+      setCouponMessage("¡Cupón aplicado exitosamente!");
+    } else {
+      setCouponMessage("Cupón inválido");
+      setAppliedCoupon(null);
+    }
+  };
+
+  // Remover cupón aplicado
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponMessage("");
+  };
+
   const buildQuoteData = () => ({
     folio: `DIT-${Date.now().toString().slice(-6)}`,
     emitida: new Date().toLocaleString("es-CL"),
@@ -390,6 +511,12 @@ export default function App() {
     subtotal: cartSubtotal,
     iva: cartTax,
     total: cartGrandTotal,
+    cupon: appliedCoupon ? {
+      codigo: appliedCoupon.code,
+      descuento: appliedCoupon.discount,
+      montoDescuento: discountAmount
+    } : null,
+    totalConDescuento: finalTotal,
   });
 
   const generateRehabOrder = (rehabData) => {
@@ -513,8 +640,8 @@ export default function App() {
     }
 
     setFormError("");
-    setQuoteView(buildQuoteData());
-    setFlowStep("final");
+    setOrderConfirmed(true);
+    setFlowStep("confirmation");
   };
 
   const emitQuote = () => {
@@ -587,7 +714,7 @@ export default function App() {
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text("Cotizacion Laboratorio DIT", 148, y);
+    doc.text("Cotizacion DIT", 148, y);
 
     y += 20;
     doc.setFontSize(10);
@@ -638,18 +765,35 @@ export default function App() {
     doc.setFontSize(10);
     doc.text(`Neto: ${formatCLP(quoteData.subtotal)}`, 40, tableEndY + 24);
     doc.text(`IVA (19%): ${formatCLP(quoteData.iva)}`, 40, tableEndY + 40);
-    doc.text(`Total: ${formatCLP(quoteData.total)}`, 40, tableEndY + 56);
+    
+    let finalY = tableEndY + 40;
+    
+    if (quoteData.cupon) {
+      finalY += 16;
+      doc.setTextColor(34, 139, 34);
+      doc.text(`Cupon aplicado (${quoteData.cupon.codigo}):`, 40, finalY);
+      doc.text(`-${formatCLP(quoteData.cupon.montoDescuento)}`, 320, finalY);
+      doc.setTextColor(0, 0, 0);
+      finalY += 16;
+      doc.text(`Total con descuento: ${formatCLP(quoteData.totalConDescuento)}`, 40, finalY);
+    } else {
+      finalY += 16;
+      doc.text(`Total: ${formatCLP(quoteData.total)}`, 40, finalY);
+    }
 
     doc.save(`cotizacion-${quoteData.folio}.pdf`);
   };
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#005eb8]">Laboratorio DIT</p>
-            <h1 className="text-lg font-extrabold">Cotizador Rehabilitación</h1>
+          <div className="flex items-center gap-3">
+            <img src={logoDIT} alt="Logo DIT" className="h-12 w-12 rounded-lg object-cover" />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2F58BC]">Cotización DIT</p>
+              <h1 className="text-lg font-extrabold">Cotizador Rehabilitación</h1>
+            </div>
           </div>
         </div>
       </header>
@@ -658,9 +802,9 @@ export default function App() {
         {formError && <p className="mb-4 text-sm font-semibold text-rose-600">{formError}</p>}
 
         {flowStep === "selection" && (
-          <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+          <div className="grid gap-6 lg:grid-cols-[370px_1fr]">
             <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-24">
-              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Configuracion de orden</h2>
+              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-[#999999]">Configuración de orden</h2>
 
               <RehabilitacionSelector
                 key={`rehab-selector-${rehabSelectorVersion}`}
@@ -682,9 +826,18 @@ export default function App() {
                       <div className="hidden w-px bg-emerald-200 sm:block" />
                       <div className="flex-1 space-y-1.5">
                         <p><span className="font-semibold">Producto:</span> {currentOrder.producto.nombre}</p>
-                        <p><span className="font-semibold">Material:</span> {currentOrder.producto.material}</p>
+                        <p><span className="font-semibold">Material:</span> {activeOrderMaterialSummary}</p>
+                        {currentOrder.producto.detalle?.sku && (
+                          <p><span className="font-semibold">SKU:</span> {currentOrder.producto.detalle.sku}</p>
+                        )}
                         {currentOrder.producto.detalle?.tipoProtesis && (
-                          <p><span className="font-semibold">Tipo de prótesis:</span> {currentOrder.producto.detalle.tipoProtesis}</p>
+                          <p><span className="font-semibold">Tipo de rehabilitación:</span> {currentOrder.producto.detalle.tipoProtesis}</p>
+                        )}
+                        {currentOrder.producto.detalle?.coronasPuente && (
+                          <p><span className="font-semibold">Corona(s):</span> {currentOrder.producto.detalle.coronasPuente}</p>
+                        )}
+                        {currentOrder.producto.detalle?.ponticosPuente && (
+                          <p><span className="font-semibold">Póntico(s):</span> {currentOrder.producto.detalle.ponticosPuente}</p>
                         )}
                         {currentOrder.producto.detalle?.subtipoTrabajo && (
                           <p><span className="font-semibold">Subtipo:</span> {currentOrder.producto.detalle.subtipoTrabajo}</p>
@@ -723,11 +876,14 @@ export default function App() {
                             ? currentOrder.piezas.join(", ") || "-"
                             : "No seleccionadas"}
                         </p>
-                        {MATERIAL_PRICES[currentOrder.producto.material] && currentOrder.piezas.length > 0 && (
+                        {activeOrderApproximateTotal !== null && (
                           <p className="pt-1 text-base font-extrabold text-emerald-700">
-                            Total estimado: {formatCLP(MATERIAL_PRICES[currentOrder.producto.material] * currentOrder.piezas.length)}
+                            Total aproximado {formatCLP(activeOrderApproximateTotal)}
                           </p>
                         )}
+                        <p className="pt-1 text-xs text-emerald-700/80">
+                          La cotizacion puede estar sujeta a cambios.
+                        </p>
                       </div>
                     </div>
 
@@ -757,7 +913,7 @@ export default function App() {
 
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">
+                  <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-[#999999]">
                     Carga de archivos del caso
                   </h2>
                   <span
@@ -781,7 +937,7 @@ export default function App() {
                   className={`block rounded-2xl border-2 border-dashed p-6 text-center transition ${
                     currentOrder
                       ? isFileDragOver
-                        ? "border-[#005eb8] bg-blue-50"
+                        ? "border-[#2F58BC] bg-[#2F58BC]/5"
                         : "border-slate-300 bg-slate-50"
                       : "cursor-not-allowed border-slate-200 bg-slate-100"
                   }`}
@@ -789,7 +945,7 @@ export default function App() {
                   <p className="text-sm font-semibold text-slate-700">
                     Arrastra archivos aqui o selecciona desde tu equipo
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-[#999999]">
                     Formatos permitidos: STL, DCM, DICOM y ZIP
                   </p>
 
@@ -799,7 +955,7 @@ export default function App() {
                     multiple
                     disabled={!currentOrder}
                     onChange={handleFileInputChange}
-                    className="mt-4 block mx-auto text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#005eb8] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed"
+                    className="mt-4 block mx-auto text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#2F58BC] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed"
                   />
                 </label>
 
@@ -807,7 +963,7 @@ export default function App() {
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <p className="text-sm font-semibold text-slate-700">Archivos cargados</p>
-                      <span className="text-xs font-bold text-slate-500">
+                      <span className="text-xs font-bold text-[#999999]">
                         {currentOrder.archivos.length} archivo(s)
                       </span>
                     </div>
@@ -820,7 +976,7 @@ export default function App() {
                           >
                             <div>
                               <p className="font-semibold text-slate-700">{file.nombre}</p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-xs text-[#999999]">
                                 {(file.pesoBytes / 1024 / 1024).toFixed(2)} MB
                               </p>
                             </div>
@@ -835,8 +991,24 @@ export default function App() {
                         ))}
                       </div>
                   </div>
-                )}
-              </div>
+                )}              </div>
+
+              {/* Card del cupón generado */}
+              {generatedCoupon && (
+                <div className="mt-6 rounded-3xl border-2 border-dashed border-[#3366FF] bg-[#3366FF]/5 p-6 shadow-sm text-center">
+                  <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-[#2F58BC] flex items-center justify-center">
+                    <span className="text-2xl">🎉</span>
+                  </div>
+                  <h3 className="text-lg font-extrabold text-[#2F58BC] mb-2">¡Cupón de Bienvenida!</h3>
+                  <p className="text-sm text-[#999999] mb-3">Gracias por registrar tu email</p>
+                  <div className="inline-block bg-white border-2 border-dashed border-[#2F58BC] rounded-lg px-6 py-3">
+                    <p className="text-xs font-semibold text-[#999999] mb-1">CÓDIGO DEL CUPÓN</p>
+                    <p className="text-2xl font-extrabold text-[#2F58BC] tracking-wider">{generatedCoupon.code}</p>
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-emerald-700">10% de descuento en tu compra</p>
+                  <p className="mt-1 text-xs text-[#999999]">Aplica este código al finalizar tu orden</p>
+                </div>
+              )}
             </section>
           </div>
         )}
@@ -844,7 +1016,7 @@ export default function App() {
         {flowStep === "cart" && (
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Resumen de carrito</h2>
+              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-[#999999]">Resumen de carrito</h2>
               <button
                 type="button"
                 onClick={() => setFlowStep("selection")}
@@ -855,14 +1027,14 @@ export default function App() {
             </div>
 
             {cartItems.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+              <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-[#999999]">
                 Aun no agregas productos. Vuelve al catalogo para continuar.
               </p>
             ) : (
               <>
                 <div className="overflow-x-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-[#999999]">
                       <tr>
                         <th className="px-4 py-3">Producto</th>
                         <th className="px-4 py-3">Cantidad</th>
@@ -904,9 +1076,56 @@ export default function App() {
                     <span className="text-slate-600">IVA (19%)</span>
                     <span className="font-semibold">{formatCLP(cartTax)}</span>
                   </p>
-                  <p className="flex items-center justify-between text-base font-extrabold text-[#005eb8]">
+                  
+                  {/* Sección para aplicar cupón */}
+                  <div className="pt-3 border-t border-slate-200">
+                    <p className="text-xs font-semibold text-[#999999] mb-2">¿Tienes un cupón?</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                        placeholder="Ingresa tu código"
+                        disabled={!!appliedCoupon}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+                      />
+                      {!appliedCoupon ? (
+                        <button
+                          type="button"
+                          onClick={applyCoupon}
+                          className="rounded-lg bg-[#2F58BC] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3366FF] transition-colors"
+                        >
+                          Aplicar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={removeCoupon}
+                          className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                        >
+                          Quitar
+                        </button>
+                      )}
+                    </div>
+                    {couponMessage && (
+                      <p className={`mt-2 text-xs font-semibold ${
+                        appliedCoupon ? "text-emerald-600" : "text-rose-600"
+                      }`}>
+                        {couponMessage}
+                      </p>
+                    )}
+                  </div>
+
+                  {appliedCoupon && (
+                    <p className="flex items-center justify-between text-sm text-emerald-600">
+                      <span className="font-semibold">Descuento (10%)</span>
+                      <span className="font-semibold">-{formatCLP(discountAmount)}</span>
+                    </p>
+                  )}
+                  
+                  <p className="flex items-center justify-between text-base font-extrabold text-[#2F58BC]">
                     <span>Total general</span>
-                    <span>{formatCLP(cartGrandTotal)}</span>
+                    <span>{formatCLP(finalTotal)}</span>
                   </p>
                 </div>
 
@@ -914,7 +1133,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={completePatientStep}
-                    className="rounded-xl bg-[#005eb8] px-4 py-2.5 text-sm font-bold text-white"
+                    className="rounded-xl bg-[#2F58BC] px-4 py-2.5 text-sm font-bold text-white"
                   >
                     Continuar
                   </button>
@@ -931,122 +1150,56 @@ export default function App() {
           </section>
         )}
 
-        {flowStep === "final" && (
-          <section className="space-y-4">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">
-                Acciones finales
-              </h2>
+        {flowStep === "confirmation" && orderConfirmed && (
+          <section className="mx-auto max-w-2xl">
+            <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 shadow-sm text-center">
+              <div className="mb-6">
+                <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-emerald-200 flex items-center justify-center">
+                  <span className="text-3xl">?</span>
+                </div>
+                <h2 className="text-2xl font-extrabold text-emerald-700">¡Orden Lista!</h2>
+              </div>
 
-              <p className="mt-2 text-sm text-slate-600">
-                Datos completados. Ahora puedes emitir la cotizacion en pantalla o descargar el PDF completo.
+              <p className="text-lg text-emerald-700 mb-2">
+                Tu orden ha sido registrada y enviada correctamente.
               </p>
 
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={enviarCotizacion}
-                  className="rounded-xl bg-[#005eb8] px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#004f9b]"
-                >
-                  Enviar cotizacion
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadQuotePdf}
-                  className="rounded-xl border-2 border-[#005eb8] bg-white px-5 py-3 text-sm font-bold text-[#005eb8] hover:bg-blue-50"
-                >
-                  Descargar cotizacion PDF
-                </button>
+              <p className="text-sm text-emerald-600 mb-8">
+                <strong>Nº de Orden:</strong> {currentOrder?.idOrden || patientData.orden}
+              </p>
 
-              </div>
+              {appliedCoupon && (
+                <div className="mb-6 rounded-xl border border-[#3366FF]/20 bg-[#3366FF]/5 p-4">
+                  <p className="text-sm font-semibold text-[#2F58BC] mb-1">✨ Cupón aplicado</p>
+                  <p className="text-xs text-[#999999]">
+                    Código: <span className="font-bold">{appliedCoupon.code}</span> - Descuento: 10%
+                  </p>
+                  <p className="text-lg font-bold text-emerald-600 mt-2">
+                    Ahorraste {formatCLP(discountAmount)}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-lg font-semibold text-emerald-700 mb-8">
+                ¡Gracias por tu cotización!
+              </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderConfirmed(false);
+                  setCartItems([]);
+                  setCurrentOrder(null);
+                  setFlowStep("selection");
+                }}
+                className="w-full rounded-xl bg-[#2F58BC] px-6 py-3 text-sm font-bold text-white hover:bg-[#3366FF]"
+              >
+                Volver al cotizador
+              </button>
             </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Resumen para cotizacion</h2>
-              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
-                <p><span className="font-semibold">Fecha:</span> {patientData.fecha}</p>
-                <p><span className="font-semibold">N de Orden:</span> {patientData.orden}</p>
-                <p><span className="font-semibold">Doctor(a):</span> {patientData.doctor}</p>
-                <p><span className="font-semibold">Paciente:</span> {patientData.paciente}</p>
-                <p><span className="font-semibold">RUT:</span> {patientData.rut}</p>
-                <p><span className="font-semibold">Telefono:</span> {patientData.telefono}</p>
-                <p className="sm:col-span-2"><span className="font-semibold">Correo:</span> {patientData.email}</p>
-              </div>
-            </div>
-
-            {submissionResult?.ok && (
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-emerald-700">Envio exitoso</h2>
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-700">
-                    {submissionResult.payload.idOrden}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-emerald-700">{submissionResult.mensaje}</p>
-                <p className="text-xs text-emerald-700">Fecha de envio: {submissionResult.fechaEnvio}</p>
-
-                <div className="mt-4 space-y-2 rounded-xl border border-emerald-200 bg-white p-3 text-sm">
-                  <p><span className="font-semibold">Paciente:</span> {submissionResult.payload.paciente.paciente}</p>
-                  <p><span className="font-semibold">Doctor(a):</span> {submissionResult.payload.paciente.doctor}</p>
-                  <p><span className="font-semibold">Producto:</span> {submissionResult.payload.configuracionProducto.nombre}</p>
-                  <p><span className="font-semibold">Tipo:</span> {submissionResult.payload.configuracionProducto.tipoProducto}</p>
-                  <p><span className="font-semibold">Material:</span> {submissionResult.payload.configuracionProducto.material}</p>
-                  <p><span className="font-semibold">Color:</span> {submissionResult.payload.configuracionProducto.color}</p>
-                  <p><span className="font-semibold">Piezas:</span> {submissionResult.payload.piezas.join(", ")}</p>
-                  <p><span className="font-semibold">Archivos asociados:</span> {submissionResult.payload.archivos.length}</p>
-                  {submissionResult.payload.archivos.length > 0 && (
-                    <div className="rounded-lg border border-slate-200 p-2 text-xs text-slate-600">
-                      {submissionResult.payload.archivos.map((file) => (
-                        <p key={file.idArchivo}>{file.nombre} ({file.idOrden})</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {quoteView && (
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500">Cotizacion emitida</h2>
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
-                    {quoteView.folio}
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {quoteView.items.map((item) => (
-                    <div key={`quote-${item.key}`} className="flex items-start justify-between rounded-xl border border-slate-200 p-3 text-sm">
-                      <div>
-                        <p className="font-bold text-slate-800">{item.name}</p>
-                        <p className="text-slate-500">
-                          {item.material} · Tipo de conexion {item.connection || "-"} · Cantidad {item.qty}
-                        </p>
-                      </div>
-                      <p className="font-bold text-[#005eb8]">{formatCLP(item.total)}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-4 space-y-1 border-t border-slate-200 pt-3 text-sm">
-                  <p className="flex justify-between"><span>Neto</span><span className="font-semibold">{formatCLP(quoteView.subtotal)}</span></p>
-                  <p className="flex justify-between"><span>IVA (19%)</span><span className="font-semibold">{formatCLP(quoteView.iva)}</span></p>
-                  <p className="flex justify-between text-base font-extrabold text-[#005eb8]"><span>Total</span><span>{formatCLP(quoteView.total)}</span></p>
-                </div>
-
-                <div className="mt-4 border-t border-slate-200 pt-4">
-                  <button
-                    type="button"
-                    onClick={goToMenu}
-                    className="w-full rounded-xl bg-[#005eb8] px-4 py-3 text-sm font-bold text-white hover:bg-[#004f9b]"
-                  >
-                    Finalizar cotizacion
-                  </button>
-                </div>
-              </div>
-            )}
           </section>
         )}
+
       </main>
 
       {isDetailOpen && activeProduct && (
@@ -1054,14 +1207,14 @@ export default function App() {
           <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl transition-transform">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#005eb8]">Detalle de seleccion</p>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2F58BC]">Detalle de seleccion</p>
                 <h3 className="mt-1 text-xl font-extrabold text-slate-800">{activeProduct.nombre}</h3>
-                <p className="mt-1 text-sm text-slate-500">{activeProduct.tipoProducto} · {activeProduct.morfologia}</p>
+                <p className="mt-1 text-sm text-[#999999]">{activeProduct.tipoProducto} — {activeProduct.morfologia}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsDetailOpen(false)}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-[#999999] hover:bg-slate-50"
               >
                 Cerrar
               </button>
@@ -1073,7 +1226,7 @@ export default function App() {
                               onClick={modalCartItems.length > 0 ? finalizarModalAndGoToCart : closeModalWithoutSaving}
                               className={`rounded-xl px-3 py-2 text-sm font-semibold ${
                                 modalCartItems.length > 0
-                                  ? "bg-[#005eb8] text-white hover:bg-[#004f9b]"
+                                  ? "bg-[#2F58BC] text-white hover:bg-[#3366FF]"
                                   : "border border-slate-300 text-slate-600"
                               }`}
                             >
@@ -1089,8 +1242,8 @@ export default function App() {
                           )}
 
                           {modalCartItems.length > 0 && (
-                            <div className="mt-4 rounded-lg border border-blue-300 bg-blue-50 p-3 text-sm">
-                              <p className="font-semibold text-blue-700">📋 {modalCartItems.length} producto(s) en lista</p>
+                            <div className="mt-4 rounded-lg border border-[#3366FF]/20 bg-[#3366FF]/5 p-3 text-sm">
+                              <p className="font-semibold text-[#2F58BC]">🛒 {modalCartItems.length} producto(s) en lista</p>
                               <div className="mt-2 space-y-1 text-xs text-blue-600">
                                 {modalCartItems.map((item) => (
                                   <p key={item.key}>
@@ -1110,10 +1263,10 @@ export default function App() {
                       key={color}
                       type="button"
                       onClick={() => setSelectedColor(color)}
-                      className={`relative h-10 w-10 rounded-full border-2 text-[11px] font-bold ${
+                      className={`relative h-10 w-10 rounded-full border-2 text-[11px] font-bold transition-all ${
                         selectedColor === color
-                          ? "border-[#005eb8] ring-4 ring-blue-100"
-                          : "border-white"
+                          ? "border-[#2F58BC] ring-4 ring-[#2F58BC]/10"
+                          : "border-white hover:border-[#3366FF]"
                       }`}
                       style={{ backgroundColor: COLOR_SWATCH[color] ?? "#e2e8f0" }}
                     >
@@ -1129,10 +1282,10 @@ export default function App() {
                       key={material}
                       type="button"
                       onClick={() => setSelectedModalMaterial(material)}
-                      className={`rounded-full border px-4 py-2 text-xs font-semibold ${
+                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors ${
                         selectedModalMaterial === material
-                          ? "border-[#005eb8] bg-[#005eb8] text-white"
-                          : "border-slate-300 text-slate-600"
+                          ? "border-[#2F58BC] bg-[#2F58BC] text-white"
+                          : "border-slate-300 text-slate-600 hover:border-[#3366FF] hover:bg-[#3366FF]/5"
                       }`}
                     >
                       {material}
@@ -1145,7 +1298,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setSelectedQty((prev) => Math.max(1, prev - 1))}
-                    className="h-8 w-8 rounded-lg border border-slate-300 text-lg font-bold text-slate-700"
+                    className="h-8 w-8 rounded-lg border border-slate-300 text-lg font-bold text-slate-700 transition-colors hover:border-[#999999] hover:bg-slate-50"
                   >
                     -
                   </button>
@@ -1153,7 +1306,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setSelectedQty((prev) => prev + 1)}
-                    className="h-8 w-8 rounded-lg border border-[#005eb8] bg-[#005eb8] text-lg font-bold text-white"
+                    className="h-8 w-8 rounded-lg border border-[#2F58BC] bg-[#2F58BC] text-lg font-bold text-white transition-colors hover:bg-[#3366FF]"
                   >
                     +
                   </button>
@@ -1161,7 +1314,7 @@ export default function App() {
 
                 <label className="mt-6 block text-sm font-semibold text-slate-700">
                   Tipo de Conexion
-                  <span className="mt-2 block text-xs font-medium text-slate-500">Escribe el tipo de conexion</span>
+                  <span className="mt-2 block text-xs font-medium text-[#999999]">Escribe el tipo de conexion</span>
                   <textarea
                     value={selectedConnection}
                     onChange={(event) => setSelectedConnection(event.target.value)}
@@ -1173,7 +1326,7 @@ export default function App() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Resumen de configuracion</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-[#999999]">Resumen de configuracion</p>
                 <div className="mt-3 space-y-2 text-sm text-slate-600">
                   <p>Color: <span className="font-semibold text-slate-800">{selectedColor}</span></p>
                   <p>Material: <span className="font-semibold text-slate-800">{selectedModalMaterial}</span></p>
@@ -1185,15 +1338,15 @@ export default function App() {
                 </div>
 
                 <div className="mt-5 border-t border-slate-200 pt-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Precio estimado</p>
-                  <p className="mt-1 text-2xl font-extrabold text-[#005eb8]">{formatCLP(modalEstimatedTotal)}</p>
-                  <p className="mt-1 text-xs text-slate-500">Valor unitario: {formatCLP(modalPrice)}</p>
+                  <p className="text-xs uppercase tracking-wide text-[#999999]">Precio estimado</p>
+                  <p className="mt-1 text-2xl font-extrabold text-[#2F58BC]">{formatCLP(modalEstimatedTotal)}</p>
+                  <p className="mt-1 text-xs text-[#999999]">Valor unitario: {formatCLP(modalPrice)}</p>
                 </div>
 
                 <button
                   type="button"
                   onClick={addToCart}
-                  className="mt-4 w-full rounded-xl bg-[#005eb8] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#004f9b]"
+                  className="mt-4 w-full rounded-xl bg-[#2F58BC] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#3366FF]"
                 >
                   Agregar al carrito
                 </button>
@@ -1202,7 +1355,7 @@ export default function App() {
                                   <button
                                     type="button"
                                     onClick={finalizarModalAndGoToCart}
-                                    className="w-full rounded-xl bg-[#005eb8] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#004f9b]"
+                                    className="w-full rounded-xl bg-[#2F58BC] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#3366FF]"
                                   >
                                     Finalizar ({modalCartItems.length} items)
                                   </button>
@@ -1216,5 +1369,9 @@ export default function App() {
     </div>
   );
 }
+
+
+
+
 
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { REHAB_CONFIG } from "./rehabilitacionData";
 
 const PIEZAS_DENTALES = {
@@ -8,6 +8,14 @@ const PIEZAS_DENTALES = {
 
 const selectClass = "mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm";
 const labelClass = "mt-3 block text-xs font-semibold text-slate-600";
+
+function formatCLP(value) {
+  return value.toLocaleString("es-CL", {
+    style: "currency",
+    currency: "CLP",
+    minimumFractionDigits: 0,
+  });
+}
 
 export default function RehabilitacionSelector({ onConfirm, onError }) {
   const [modulo, setModulo] = useState("cementados");
@@ -23,67 +31,201 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
 
   // --- Cementados state ---
   const [cemTipoProtesis, setCemTipoProtesis] = useState("");
-  const [cemSubtipoTrabajo, setCemSubtipoTrabajo] = useState("");
   const [cemMaterialId, setCemMaterialId] = useState("");
   const [cemSubtipoId, setCemSubtipoId] = useState("");
   const [cemReceta, setCemReceta] = useState("");
-  const [cemRecetaArchivo, setCemRecetaArchivo] = useState(null);
+  const [cemColor, setCemColor] = useState("");
+  const [cemCantidadEspecial, setCemCantidadEspecial] = useState("");
+  const [cemCoronasPuente, setCemCoronasPuente] = useState("");
+  const [cemPonticosPuente, setCemPonticosPuente] = useState("");
 
   // --- Atornillados state ---
-  const [atTipoProtesis, setAtTipoProtesis] = useState("Pilar");
+  const [atTipoProtesis, setAtTipoProtesis] = useState("Corona sobre implante");
   const [atPilarId, setAtPilarId] = useState(atornilladosPilar.opciones[0].id);
   const [atPilarOpcion, setAtPilarOpcion] = useState(
     atornilladosPilar.opciones[0].variantes?.[0] ?? ""
   );
+  const [atAditamentoInfo, setAtAditamentoInfo] = useState("");
   const [atCoronaId, setAtCoronaId] = useState(atornilladosCorona.opciones[0].id);
   const [atCoronaSubopcion, setAtCoronaSubopcion] = useState("");
+  const [atColor, setAtColor] = useState("");
   const [atTornillo, setAtTornillo] = useState(atornilladosTornillo.opciones[0]);
+  const [atIncluyeTornillos, setAtIncluyeTornillos] = useState("sin");
 
   // Derived — cementados
   const cemMaterial = cementados.materiales.find((m) => m.id === cemMaterialId);
   const cemSubtipo = cemMaterial?.subOpciones?.find((s) => s.id === cemSubtipoId);
-  const requiereSubtipoTrabajo = Boolean(cemTipoProtesis);
-  const subtipoHabilitado = Boolean(cemTipoProtesis);
-  const materialHabilitado = Boolean(cemSubtipoTrabajo);
+  const casosCementados = cementados.casos ?? [];
+  const tiposCementados = cementados.tiposRehabilitacion ?? cementados.tiposProtesis ?? [];
+  const tiposAtornillados = atornillados.tiposRehabilitacion ?? [];
+  const materialHabilitado = Boolean(cemTipoProtesis);
+  const materialIdsPorTipo = casosCementados
+    .filter((caso) => caso.tipo === cemTipoProtesis)
+    .map((caso) => caso.materialId);
+  const materialesCementadosDisponibles = materialIdsPorTipo.length > 0
+    ? cementados.materiales.filter((material) => materialIdsPorTipo.includes(material.id))
+    : cementados.materiales;
+  const casoCementado = casosCementados.find(
+    (caso) => caso.tipo === cemTipoProtesis && caso.materialId === cemMaterialId
+  );
+  console.log("🟢 casoCementado recalculado:", casoCementado);
+  console.log("🟢 cemTipoProtesis:", cemTipoProtesis, "cemMaterialId:", cemMaterialId);
+  console.log("🟢 casoCementado.precio:", casoCementado?.precio);
+  const requiereCamposPuente = Boolean(casoCementado?.requierePuente);
+  const requierePrecioByPieza = Boolean(casoCementado?.precioByPieza);
+  const piezaTotal = requierePrecioByPieza
+    ? selectedPiezas.length * (casoCementado?.precio ?? 0)
+    : null;
+  const puenteTotal = requiereCamposPuente
+    ? (Number(cemCoronasPuente) || 0) * (casoCementado?.precio ?? 0)
+      + (Number(cemPonticosPuente) || 0) * (casoCementado?.precioPontico ?? 0)
+    : null;
 
   const handleTipoProtesisChange = (value) => {
-    setCemTipoProtesis(value);
-    setCemSubtipoTrabajo("");
-    setCemMaterialId("");
-    setCemSubtipoId("");
-    setCemReceta("");
-    setCemRecetaArchivo(null);
-  };
+    const materialIds = casosCementados
+      .filter((caso) => caso.tipo === value)
+      .map((caso) => caso.materialId);
+    const materialPorDefecto = materialIds.length === 1 ? materialIds[0] : "";
+    const nextMaterial = cementados.materiales.find((material) => material.id === materialPorDefecto);
 
-  const handleSubtipoTrabajoChange = (value) => {
-    setCemSubtipoTrabajo(value);
-    setCemMaterialId("");
-    setCemSubtipoId("");
+    setCemTipoProtesis(value);
+    setCemMaterialId(materialPorDefecto);
+    setCemSubtipoId(nextMaterial?.subOpciones?.[0]?.id ?? "");
     setCemReceta("");
-    setCemRecetaArchivo(null);
+    setCemColor("");
+    setCemCantidadEspecial("");
+    setCemCoronasPuente("");
+    setCemPonticosPuente("");
+    setQuiereElegirPiezas(false);
+    setPiezaModo("manual");
+    setSelectedPiezas([]);
+    onError("");
   };
 
   const handleMaterialChange = (value) => {
+    console.log("🔵 handleMaterialChange called with:", value);
     const nextMaterial = cementados.materiales.find((material) => material.id === value);
+    console.log("🔵 nextMaterial:", nextMaterial);
     setCemMaterialId(value);
     setCemSubtipoId(nextMaterial?.subOpciones?.[0]?.id ?? "");
     setCemReceta("");
-    setCemRecetaArchivo(null);
+    setCemCantidadEspecial("");
+    setCemCoronasPuente("");
+    setCemPonticosPuente("");
+    setQuiereElegirPiezas(false);
+    setPiezaModo("manual");
+    setSelectedPiezas([]);
+    onError("");
   };
 
-  const handleDisilicatoChange = (value) => {
-    setCemSubtipoId(value);
-    setCemReceta("");
-    setCemRecetaArchivo(null);
+  const handleAtPilarChange = (value) => {
+    setAtPilarId(value);
+    setAtPilarOpcion("");
+    setAtAditamentoInfo("");
+    setAtIncluyeTornillos("sin");
+    setQuiereElegirPiezas(false);
+    setPiezaModo("manual");
+    setSelectedPiezas([]);
+    onError("");
+  };
+
+  const handleAtCoronaChange = (value) => {
+    setAtCoronaId(value);
+    setAtCoronaSubopcion("");
+    setAtColor("");
+    setAtAditamentoInfo("");
+    setQuiereElegirPiezas(false);
+    setPiezaModo("manual");
+    setSelectedPiezas([]);
+    onError("");
+  };
+
+  const resetAtornilladosState = (tipo = atTipoProtesis) => {
+    const coronaIdsTipo = (atornillados.casos ?? [])
+      .filter((caso) => caso.tipo === tipo && Boolean(caso.coronaId))
+      .map((caso) => caso.coronaId);
+    const primerCoronaDisponible = atornilladosCorona.opciones.find((opcion) => coronaIdsTipo.includes(opcion.id))?.id
+      ?? atornilladosCorona.opciones[0].id;
+
+    setAtPilarId(atornilladosPilar.opciones[0].id);
+    setAtPilarOpcion(atornilladosPilar.opciones[0].variantes?.[0] ?? "");
+    setAtAditamentoInfo("");
+    setAtCoronaId(primerCoronaDisponible);
+    setAtCoronaSubopcion("");
+    setAtColor("");
+    setAtTornillo(atornilladosTornillo.opciones[0]);
+    setAtIncluyeTornillos("sin");
+    setQuiereElegirPiezas(false);
+    setPiezaModo("manual");
+    setSelectedPiezas([]);
+  };
+
+  const handleAtTipoProtesisChange = (value) => {
+    setAtTipoProtesis(value);
+    resetAtornilladosState(value);
+    onError("");
+  };
+
+  const handleModuloChange = (nextModulo) => {
+    if (nextModulo === "cementados") {
+      const primerTipo = tiposAtornillados[0] ?? "Corona sobre implante";
+      setAtTipoProtesis(primerTipo);
+      resetAtornilladosState(primerTipo);
+    }
+
+    setModulo(nextModulo);
+    onError("");
   };
 
   // Derived — atornillados
   const atPilar = atornilladosPilar.opciones.find((p) => p.id === atPilarId);
-  const atCorona = atornilladosCorona.opciones.find((c) => c.id === atCoronaId);
+  const casosAtornillados = atornillados.casos ?? [];
+  const atornilladosPriceMatrix = useMemo(() => {
+    return casosAtornillados.reduce((acc, caso) => {
+      const materialKey = caso.coronaId ?? caso.pilarId;
+      if (!materialKey) {
+        return acc;
+      }
+
+      if (!acc[caso.tipo]) {
+        acc[caso.tipo] = {};
+      }
+
+      acc[caso.tipo][materialKey] = {
+        precio: caso.precio ?? null,
+        despachoDias: caso.despachoDias ?? null,
+        colores: caso.colores ?? [],
+        precioByPieza: Boolean(caso.precioByPieza),
+        adicionalTornillos: caso.adicionalTornillos ?? 0,
+        material: caso.material ?? null,
+      };
+
+      return acc;
+    }, {});
+  }, [casosAtornillados]);
+  const coronaIdsPorTipoAtornillado = casosAtornillados
+    .filter((caso) => caso.tipo === atTipoProtesis && Boolean(caso.coronaId))
+    .map((caso) => caso.coronaId);
+  const opcionesCoronaAtornillado = atornilladosCorona.opciones.filter((opcion) => coronaIdsPorTipoAtornillado.includes(opcion.id));
+  const atCorona = opcionesCoronaAtornillado.find((c) => c.id === atCoronaId);
   const pilarRequiereVariante = Boolean(atPilar?.variantes?.length);
-  const muestraPilar = atTipoProtesis === "Pilar";
-  const muestraCorona = atTipoProtesis === "Corona";
+  const muestraPilar = atTipoProtesis === "Pilar personalizado sobre implante";
+  const muestraCorona = !muestraPilar;
   const etiquetaCeramicaCorona = atCorona?.id === "premill" ? "Cerámica adicional" : "Cerámica";
+  const atPrecioConfigCorona = atornilladosPriceMatrix?.[atTipoProtesis]?.[atCoronaId] ?? null;
+  const atPrecioConfigPilar = atornilladosPriceMatrix?.[atTipoProtesis]?.[atPilarId] ?? null;
+  const atPrecioId = muestraPilar
+    ? `${atTipoProtesis}__${atPilarId}`
+    : `${atTipoProtesis}__${atCoronaId}`;
+  const requierePrecioByPiezaAtornillado = Boolean(atPrecioConfigCorona?.precioByPieza);
+  const precioCoronaAtornillado = muestraCorona
+    ? (requierePrecioByPiezaAtornillado
+      ? selectedPiezas.length * (atPrecioConfigCorona?.precio ?? 0)
+      : (atPrecioConfigCorona?.precio ?? null))
+    : null;
+  const precioPilarPersonalizado = atPrecioConfigPilar
+    ? (atPrecioConfigPilar.precio ?? 0) + (atIncluyeTornillos === "con" ? atPrecioConfigPilar.adicionalTornillos ?? 0 : 0)
+    : null;
 
   useEffect(() => {
     setAtPilarOpcion(atPilar?.variantes?.[0] ?? "");
@@ -92,6 +234,36 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
   useEffect(() => {
     setAtCoronaSubopcion(atCorona?.opcionesCeramica?.[0] ?? "");
   }, [atCoronaId, atCorona]);
+
+  useEffect(() => {
+    setCemColor(casoCementado?.colores?.[0] ?? "");
+  }, [casoCementado]);
+
+  useEffect(() => {
+    setAtIncluyeTornillos("sin");
+  }, [atTipoProtesis, atPilarId]);
+
+  useEffect(() => {
+    setAtColor(atPrecioConfigCorona?.colores?.[0] ?? "");
+  }, [atPrecioConfigCorona]);
+
+  useEffect(() => {
+    if (!muestraCorona || opcionesCoronaAtornillado.length === 0) {
+      return;
+    }
+
+    const existeOpcionActual = opcionesCoronaAtornillado.some((opcion) => opcion.id === atCoronaId);
+    if (!existeOpcionActual) {
+      setAtCoronaId(opcionesCoronaAtornillado[0].id);
+    }
+  }, [muestraCorona, opcionesCoronaAtornillado, atCoronaId]);
+
+  useEffect(() => {
+    if (!requierePrecioByPieza && !requierePrecioByPiezaAtornillado) {
+      setQuiereElegirPiezas(false);
+      setSelectedPiezas([]);
+    }
+  }, [requierePrecioByPieza, requierePrecioByPiezaAtornillado]);
 
   // ----------------------------------------------------------------
   const togglePieza = (pieza) => {
@@ -141,12 +313,7 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
 
     if (modulo === "cementados") {
       if (!cemTipoProtesis) {
-        onError("Selecciona el tipo de prótesis en Cementados.");
-        return;
-      }
-
-      if (requiereSubtipoTrabajo && !cemSubtipoTrabajo) {
-        onError("Selecciona el subtipo en Cementados.");
+        onError("Selecciona el tipo de rehabilitación en Cementados.");
         return;
       }
 
@@ -156,31 +323,66 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
       }
 
       if (cemMaterial?.id === "disilicato" && cemSubtipo?.requiereReceta) {
-        const hasTexto = Boolean(cemReceta.trim());
-        const hasArchivo = Boolean(cemRecetaArchivo);
-        if (!hasTexto && !hasArchivo) {
-          onError("En Disilicato > Receta debes ingresar texto o adjuntar un archivo.");
+        if (!cemReceta.trim()) {
+          onError("En Disilicato > Receta debes ingresar texto.");
+          return;
+        }
+      }
+
+      if (casoCementado?.colores?.length > 0 && !cemColor) {
+        onError("Selecciona un color para continuar.");
+        return;
+      }
+
+      if (requiereCamposPuente) {
+        const coronas = Number(cemCoronasPuente);
+        if (!Number.isInteger(coronas) || coronas <= 0) {
+          onError("Ingresa una cantidad válida de corona(s).");
+          return;
+        }
+
+        const ponticos = Number(cemPonticosPuente);
+        if (!Number.isInteger(ponticos) || ponticos <= 0) {
+          onError("Ingresa una cantidad válida de póntico(s).");
+          return;
+        }
+      }
+
+      if (casoCementado?.requiereCantidad) {
+        const cantidad = Number(cemCantidadEspecial);
+        if (!Number.isInteger(cantidad) || cantidad <= 0) {
+          onError(`Ingresa ${casoCementado.etiquetaCantidad?.toLowerCase() || "la cantidad requerida"}.`);
           return;
         }
       }
 
       const nombreMaterial = cemSubtipo
-        ? `${cemMaterial.nombre} (${cemSubtipo.nombre}${cemSubtipo.requiereReceta && cemReceta ? ` — ${cemReceta}` : ""}${
-            cemSubtipo.requiereReceta && cemRecetaArchivo ? ` — Archivo: ${cemRecetaArchivo.name}` : ""
-          })`
+        ? `${cemMaterial.nombre} (${cemSubtipo.nombre}${cemSubtipo.requiereReceta && cemReceta ? ` — ${cemReceta}` : ""})`
+        : casoCementado
+          ? `${cemMaterial?.nombre ?? ""}${casoCementado.sku ? ` — SKU ${casoCementado.sku}` : ""}${cemColor ? ` — Color ${cemColor}` : ""}${requiereCamposPuente && puenteTotal ? ` — ${formatCLP(puenteTotal)}` : casoCementado.precio ? ` — ${formatCLP(casoCementado.precio)}` : ""}`
         : cemMaterial?.nombre ?? "";
 
       onConfirm({
         modulo: "Cementados",
-        nombre: `Rehabilitación Cementada — ${cemTipoProtesis}${cemSubtipoTrabajo ? ` / ${cemSubtipoTrabajo}` : ""}`,
+        nombre: `Rehabilitación Cementada — ${cemTipoProtesis}`,
         material: nombreMaterial,
         detalle: {
           tipoProtesis: cemTipoProtesis,
-          subtipoTrabajo: cemSubtipoTrabajo || null,
+          subtipoTrabajo: null,
           material: cemMaterial?.nombre,
           subtipo: cemSubtipo?.nombre ?? null,
           receta: cemSubtipo?.requiereReceta ? cemReceta : null,
-          recetaArchivo: cemSubtipo?.requiereReceta && cemRecetaArchivo ? cemRecetaArchivo.name : null,
+          recetaArchivo: null,
+          sku: casoCementado?.sku ?? null,
+          nombreProducto: casoCementado?.nombreProducto ?? null,
+          coronasPuente: requiereCamposPuente ? Number(cemCoronasPuente) : null,
+          ponticosPuente: requiereCamposPuente ? Number(cemPonticosPuente) : null,
+          color: casoCementado ? cemColor || null : null,
+          precio: requiereCamposPuente ? (puenteTotal ?? null) : requierePrecioByPieza ? (piezaTotal ?? null) : (casoCementado?.precio ?? null),
+          despachoDias: casoCementado?.despachoDias ?? null,
+          requiereCantidadEspecial: Boolean(casoCementado?.requiereCantidad),
+          cantidadEspecial: casoCementado?.requiereCantidad ? Number(cemCantidadEspecial) : null,
+          etiquetaCantidad: casoCementado?.requiereCantidad ? casoCementado?.etiquetaCantidad ?? null : null,
           incluyeSeleccionPiezas: quiereElegirPiezas,
         },
         piezas: [...selectedPiezas],
@@ -201,19 +403,29 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
         return;
       }
 
-      if (!atTornillo) {
+      if (muestraCorona && atPrecioConfigCorona?.colores?.length > 0 && !atColor) {
+        onError("Selecciona un color para continuar.");
+        return;
+      }
+
+      if (!muestraPilar && !atTornillo) {
         onError("Selecciona una opción de Tornillo para continuar.");
         return;
       }
 
-      const pilarLabel = atPilar?.nombre + (atPilarOpcion ? ` — ${atPilarOpcion}` : "");
+      const pilarLabel = atPrecioConfigPilar
+        ? `${atPilar?.nombre} + ${atPrecioConfigPilar?.material}${atIncluyeTornillos === "con" ? " + Tornillos" : ""}${atAditamentoInfo ? ` — ${atAditamentoInfo}` : ""}${precioPilarPersonalizado ? ` — ${formatCLP(precioPilarPersonalizado)}` : ""}`
+        : atPilar?.nombre + (atAditamentoInfo ? ` — ${atAditamentoInfo}` : "");
       const coronaLabel = atCorona?.nombre
         + (atCorona?.incluyeCeramica ? " + Incluye cerámica" : "")
         + (atCoronaSubopcion ? ` + ${atCoronaSubopcion}` : "");
+      const coronaMaterialSeleccionado = atPrecioConfigCorona
+        ? `${coronaLabel}${atColor ? ` — Color ${atColor}` : ""}${precioCoronaAtornillado ? ` — ${formatCLP(precioCoronaAtornillado)}` : ""}${atAditamentoInfo ? ` — ${atAditamentoInfo}` : ""}`
+        : `${coronaLabel}${atAditamentoInfo ? ` — ${atAditamentoInfo}` : ""}`;
       const materialSeleccionado = muestraPilar
         ? pilarLabel
         : muestraCorona
-          ? coronaLabel
+          ? coronaMaterialSeleccionado
           : "";
 
       onConfirm({
@@ -224,10 +436,20 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
           tipoProtesis: atTipoProtesis,
           pilar: muestraPilar ? atPilar?.nombre : null,
           pilarOpcion: muestraPilar ? atPilarOpcion || null : null,
+          pilarMaterial: muestraPilar ? atPrecioConfigPilar?.material ?? null : null,
+          aditamentoInfo: muestraPilar ? atAditamentoInfo.trim() || null : null,
+          incluyeTornillos: muestraPilar ? atIncluyeTornillos === "con" : false,
+          adicionalTornillos: muestraPilar && atIncluyeTornillos === "con" ? atPrecioConfigPilar?.adicionalTornillos ?? 0 : 0,
+          precio: muestraPilar ? precioPilarPersonalizado : null,
+          despachoDias: muestraPilar ? atPrecioConfigPilar?.despachoDias ?? null : null,
           corona: muestraCorona ? atCorona?.nombre : null,
+          color: muestraCorona ? atColor || null : null,
+          precioCorona: precioCoronaAtornillado,
+          despachoDiasCorona: muestraCorona ? atPrecioConfigCorona?.despachoDias ?? null : null,
+          precioId: atPrecioId,
           coronaIncluyeCeramica: muestraCorona ? Boolean(atCorona?.incluyeCeramica) : false,
           coronaSubopcion: muestraCorona ? atCoronaSubopcion || null : null,
-          tornillo: atTornillo,
+          tornillo: muestraPilar ? (atIncluyeTornillos === "con" ? "Con tornillos" : "Sin tornillos") : atTornillo,
           incluyeSeleccionPiezas: quiereElegirPiezas,
         },
         piezas: [...selectedPiezas],
@@ -242,18 +464,18 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
       <div className="mt-3 flex overflow-hidden rounded-xl border border-slate-200 text-sm font-semibold">
         <button
           type="button"
-          onClick={() => setModulo("cementados")}
+          onClick={() => handleModuloChange("cementados")}
           className={`flex-1 px-3 py-2 transition-colors ${
-            modulo === "cementados" ? "bg-[#005eb8] text-white" : "text-slate-500 hover:bg-slate-50"
+            modulo === "cementados" ? "bg-[#2F58BC] text-white" : "text-[#999999] hover:bg-[#2F58BC]/5"
           }`}
         >
           Cementados
         </button>
         <button
           type="button"
-          onClick={() => setModulo("atornillados")}
+          onClick={() => handleModuloChange("atornillados")}
           className={`flex-1 px-3 py-2 transition-colors ${
-            modulo === "atornillados" ? "bg-[#005eb8] text-white" : "text-slate-500 hover:bg-slate-50"
+            modulo === "atornillados" ? "bg-[#2F58BC] text-white" : "text-[#999999] hover:bg-[#2F58BC]/5"
           }`}
         >
           Atornillados
@@ -263,44 +485,22 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
       {/* ── Cementados ── */}
       {modulo === "cementados" && (
         <div>
-          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
-            Nivel 1: Tipo de Prótesis
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#2F58BC]">
+            Nivel 1: Tipo de Rehabilitación
           </p>
 
           <label className={labelClass}>
-            Tipo de Prótesis
+            Tipo de Rehabilitación
             <select value={cemTipoProtesis} onChange={(e) => handleTipoProtesisChange(e.target.value)} className={selectClass}>
               <option value="">Selecciona una opción</option>
-              {cementados.tiposProtesis.map((t) => (
+              {tiposCementados.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
           </label>
 
-          {subtipoHabilitado && (
-            <>
-              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
-                Nivel 2: Subtipo
-              </p>
-
-              <label className={labelClass}>
-                Subtipo
-                <select
-                  value={cemSubtipoTrabajo}
-                  onChange={(e) => handleSubtipoTrabajoChange(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="">Selecciona una opción</option>
-                  {cementados.subtipos.map((subtipo) => (
-                    <option key={subtipo} value={subtipo}>{subtipo}</option>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
-
           {cemTipoProtesis && (
-            <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
+            <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#2F58BC]">
               Nivel 3: Material
             </p>
           )}
@@ -309,69 +509,96 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
             <label className={labelClass}>
               Material
               <select
+                key={`material-${cemTipoProtesis}`}
                 value={cemMaterialId}
                 onChange={(e) => handleMaterialChange(e.target.value)}
                 className={`${selectClass} ${!materialHabilitado ? "bg-slate-100 text-slate-400" : ""}`}
                 disabled={!materialHabilitado}
               >
                 <option value="">Selecciona un material</option>
-                {cementados.materiales.map((m) => (
+                {materialesCementadosDisponibles.map((m) => (
                   <option key={m.id} value={m.id}>{m.nombre}</option>
                 ))}
               </select>
             </label>
           )}
 
-          {cemMaterial?.subOpciones?.length > 0 && (
-            <div key={`disilicato-${cemMaterialId}`}>
-              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
-                Nivel 4: Detalle de Disilicato
-              </p>
-
-              <label className={labelClass}>
-                Opción de Disilicato
-                <select value={cemSubtipoId} onChange={(e) => handleDisilicatoChange(e.target.value)} className={selectClass}>
-                  {cemMaterial.subOpciones.map((s) => (
-                    <option key={s.id} value={s.id}>{s.nombre}</option>
-                  ))}
-                </select>
-              </label>
+          {casoCementado && (
+            <div key={`precio-${cemMaterialId}-${cemTipoProtesis}`} className="mt-3 rounded-xl border border-[#2F58BC]/10 bg-[#2F58BC]/5 px-3 py-3 text-xs text-[#2F58BC]">
+              {casoCementado.sku && <p className="font-semibold">SKU: {casoCementado.sku}</p>}
+              {requiereCamposPuente ? (
+                <>
+                  <p className="font-semibold">Corona(s): {Number(cemCoronasPuente) || 0} × {formatCLP(casoCementado.precio)}</p>
+                  <p className="font-semibold">Póntico(s): {formatCLP(casoCementado.precioPontico ?? 0)} c/u</p>
+                  {puenteTotal > 0 && <p className="font-bold mt-1">Total: {formatCLP(puenteTotal)}</p>}
+                </>
+              ) : requierePrecioByPieza ? (
+                <>
+                  <p className="font-semibold">Precio por pieza: {formatCLP(casoCementado.precio)}</p>
+                  {piezaTotal > 0 && <p className="font-bold mt-1">Total: {formatCLP(piezaTotal)}</p>}
+                </>
+              ) : (
+                <p className="font-semibold">Precio: {formatCLP(casoCementado.precio)}</p>
+              )}
+              <p className="mt-1 font-semibold">Despacho: {casoCementado.despachoDias} días</p>
             </div>
           )}
 
-          {cemSubtipo?.requiereReceta && (
-            <div key={`receta-${cemSubtipoId}`}>
-              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
-                Nivel 5: Acción Condicional
-              </p>
+          {casoCementado?.colores?.length > 0 && (
+            <label className={labelClass}>
+              Color
+              <select value={cemColor} onChange={(e) => setCemColor(e.target.value)} className={selectClass}>
+                <option value="">Selecciona un color</option>
+                {casoCementado.colores.map((color) => (
+                  <option key={color} value={color}>{color}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
+          {requiereCamposPuente && (
+            <>
               <label className={labelClass}>
-                {cemSubtipo.etiquetaReceta || "Receta"}
-                <textarea
-                  value={cemReceta}
-                  onChange={(e) => setCemReceta(e.target.value)}
-                  placeholder="Escribe la marca o receta"
-                  rows={4}
+                Corona(s)
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={cemCoronasPuente}
+                  onChange={(e) => setCemCoronasPuente(e.target.value)}
+                  placeholder="Ingresa la cantidad de coronas"
                   className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
 
               <label className={labelClass}>
-                Adjuntar archivo
+                Póntico(s)
                 <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  onChange={(e) => setCemRecetaArchivo(e.target.files?.[0] ?? null)}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={cemPonticosPuente}
+                  onChange={(e) => setCemPonticosPuente(e.target.value)}
+                  placeholder="Ingresa la cantidad de pónticos"
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
+            </>
+          )}
 
-              {cemRecetaArchivo && (
-                <p className="mt-2 text-xs font-semibold text-slate-600">
-                  Archivo seleccionado: {cemRecetaArchivo.name}
-                </p>
-              )}
-            </div>
+          {casoCementado?.requiereCantidad && (
+            <label className={labelClass}>
+              {casoCementado.etiquetaCantidad || "Cantidad"}
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={cemCantidadEspecial}
+                onChange={(e) => setCemCantidadEspecial(e.target.value)}
+                placeholder="Ingresa una cantidad"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
           )}
 
         </div>
@@ -380,63 +607,71 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
       {/* ── Atornillados ── */}
       {modulo === "atornillados" && (
         <div>
-          <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-[#005eb8]">
-            Selecciona el tipo de prótesis y luego el submódulo correspondiente.
+          <p className="mt-3 rounded-xl border border-[#2F58BC]/10 bg-[#2F58BC]/5 px-3 py-2 text-xs font-semibold text-[#2F58BC]">
+            Selecciona el tipo de rehabilitación y luego el submódulo correspondiente.
           </p>
 
           <label className={labelClass}>
-            Tipo de Prótesis
-            <select value={atTipoProtesis} onChange={(e) => setAtTipoProtesis(e.target.value)} className={selectClass}>
-              <option value="Pilar">Pilar</option>
-              <option value="Corona">Corona</option>
+            Tipo de Rehabilitación
+            <select value={atTipoProtesis} onChange={(e) => handleAtTipoProtesisChange(e.target.value)} className={selectClass}>
+              {tiposAtornillados.map((tipo) => (
+                <option key={tipo} value={tipo}>{tipo}</option>
+              ))}
             </select>
           </label>
 
           {muestraPilar && (
             <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#2F58BC]">
                 {atornilladosPilar.etiqueta}
               </p>
 
               <label className={labelClass}>
                 Pilar
-                <select value={atPilarId} onChange={(e) => setAtPilarId(e.target.value)} className={selectClass}>
+                <select value={atPilarId} onChange={(e) => handleAtPilarChange(e.target.value)} className={selectClass}>
                   {atornilladosPilar.opciones.map((p) => (
                     <option key={p.id} value={p.id}>{p.nombre}</option>
                   ))}
                 </select>
               </label>
 
-              {pilarRequiereVariante && (
-                <label className={labelClass}>
-                  Variante de Pilar
-                  <select value={atPilarOpcion} onChange={(e) => setAtPilarOpcion(e.target.value)} className={selectClass}>
-                    {atPilar.variantes.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                </label>
+              {atPrecioConfigPilar && (
+                <div className="mt-3 rounded-xl border border-[#2F58BC]/10 bg-[#2F58BC]/5 px-3 py-3 text-xs text-[#2F58BC]">
+                  <p className="font-semibold">Material: {atPrecioConfigPilar.material}</p>
+                  <p className="mt-1 font-semibold">Precio base: {formatCLP(atPrecioConfigPilar.precio ?? 0)}</p>
+                  <p className="mt-1 font-semibold">Despacho: {atPrecioConfigPilar.despachoDias} días</p>
+                  <p className="mt-1 font-semibold">Adicional tornillos: {formatCLP(atPrecioConfigPilar.adicionalTornillos ?? 0)}</p>
+                  <p className="mt-1 font-bold">Total: {formatCLP(precioPilarPersonalizado ?? (atPrecioConfigPilar.precio ?? 0))}</p>
+                </div>
               )}
+
+              <label className={labelClass}>
+                ¿Lo quieres con o sin tornillos?
+                <select value={atIncluyeTornillos} onChange={(e) => setAtIncluyeTornillos(e.target.value)} className={selectClass}>
+                  <option value="sin">Sin tornillos</option>
+                  <option value="con">Con tornillos</option>
+                </select>
+              </label>
             </>
           )}
 
           {muestraCorona && (
             <>
-              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
+              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#2F58BC]">
                 {atornilladosCorona.etiqueta}
               </p>
 
               <label className={labelClass}>
                 Submódulo de Corona
-                <select value={atCoronaId} onChange={(e) => setAtCoronaId(e.target.value)} className={selectClass}>
-                  {atornilladosCorona.opciones.map((c) => (
+                <select value={atCoronaId} onChange={(e) => handleAtCoronaChange(e.target.value)} className={selectClass}>
+                  {opcionesCoronaAtornillado.map((c) => (
                     <option key={c.id} value={c.id}>{c.nombre}</option>
                   ))}
                 </select>
               </label>
 
               {atCorona?.incluyeCeramica && (
-                <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-[#005eb8]">
+                <p className="mt-3 rounded-xl border border-[#2F58BC]/10 bg-[#2F58BC]/5 px-3 py-2 text-xs font-semibold text-[#2F58BC]">
                   Esta opción incluye cerámica.
                 </p>
               )}
@@ -451,26 +686,68 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
                   </select>
                 </label>
               )}
+
+              {atPrecioConfigCorona && (
+                <div className="mt-3 rounded-xl border border-[#2F58BC]/10 bg-[#2F58BC]/5 px-3 py-3 text-xs text-[#2F58BC]">
+                  {requierePrecioByPiezaAtornillado ? (
+                    <>
+                      <p className="font-semibold">Precio por pieza: {formatCLP(atPrecioConfigCorona.precio ?? 0)}</p>
+                      {precioCoronaAtornillado > 0 && <p className="mt-1 font-bold">Total: {formatCLP(precioCoronaAtornillado)}</p>}
+                    </>
+                  ) : (
+                    <p className="font-semibold">Precio: {formatCLP(atPrecioConfigCorona.precio ?? 0)}</p>
+                  )}
+                  <p className="mt-1 font-semibold">Despacho: {atPrecioConfigCorona.despachoDias} días</p>
+                </div>
+              )}
+
+              {atPrecioConfigCorona?.colores?.length > 0 && (
+                <label className={labelClass}>
+                  Color
+                  <select value={atColor} onChange={(e) => setAtColor(e.target.value)} className={selectClass}>
+                    <option value="">Selecciona un color</option>
+                    {atPrecioConfigCorona.colores.map((color) => (
+                      <option key={color} value={color}>{color}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </>
           )}
 
-          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#005eb8]">
-            {atornilladosTornillo.etiqueta}
-          </p>
-
           <label className={labelClass}>
-            Tipo de Tornillo (fijo)
-            <select value={atTornillo} onChange={(e) => setAtTornillo(e.target.value)} className={selectClass}>
-              {atornilladosTornillo.opciones.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            Escriba información de aditamento
+            <textarea
+              value={atAditamentoInfo}
+              onChange={(e) => setAtAditamentoInfo(e.target.value)}
+              placeholder="Escriba información de aditamento"
+              rows={4}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
           </label>
+
+          {!muestraPilar && (
+            <>
+              <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#2F58BC]">
+                {atornilladosTornillo.etiqueta}
+              </p>
+
+              <label className={labelClass}>
+                Tipo de aditamiento
+                <select value={atTornillo} onChange={(e) => setAtTornillo(e.target.value)} className={selectClass}>
+                  {atornilladosTornillo.opciones.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
 
         </div>
       )}
 
       {/* Piezas Dentarias */}
+      {!requiereCamposPuente && (requierePrecioByPieza || requierePrecioByPiezaAtornillado) && (
       <div className="mt-4 rounded-xl border border-slate-200 p-3">
         <p className="text-xs font-semibold text-slate-600">Piezas Dentarias</p>
         <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
@@ -478,7 +755,7 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
             type="checkbox"
             checked={quiereElegirPiezas}
             onChange={(e) => handleElegirPiezasChange(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-[#005eb8]"
+            className="h-4 w-4 rounded border-slate-300 text-[#2F58BC]"
           />
           ¿Quieres elegir las piezas?
         </label>
@@ -505,7 +782,7 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
               </p>
             )}
 
-            <p className="mt-2 text-[11px] font-bold uppercase text-slate-500">Superior</p>
+            <p className="mt-2 text-[11px] font-bold uppercase text-[#999999]">Superior</p>
             <div className="mt-1 flex flex-wrap gap-1">
               {PIEZAS_DENTALES.Superior.map((pieza) => (
                 <button
@@ -513,17 +790,17 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
                   type="button"
                   onClick={() => togglePieza(pieza)}
                   disabled={piezaModo !== "manual"}
-                  className={`rounded border px-2 py-1 text-[11px] font-semibold ${
+                  className={`rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${
                     selectedPiezas.includes(pieza)
-                      ? "border-[#005eb8] bg-[#005eb8] text-white"
-                      : "border-slate-300 text-slate-600"
+                      ? "border-[#2F58BC] bg-[#2F58BC] text-white"
+                      : "border-slate-300 text-slate-600 hover:border-[#3366FF] hover:bg-[#3366FF]/5"
                   } ${piezaModo !== "manual" ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   {pieza}
                 </button>
               ))}
             </div>
-            <p className="mt-3 text-[11px] font-bold uppercase text-slate-500">Inferior</p>
+            <p className="mt-3 text-[11px] font-bold uppercase text-[#999999]">Inferior</p>
             <div className="mt-1 flex flex-wrap gap-1">
               {PIEZAS_DENTALES.Inferior.map((pieza) => (
                 <button
@@ -531,10 +808,10 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
                   type="button"
                   onClick={() => togglePieza(pieza)}
                   disabled={piezaModo !== "manual"}
-                  className={`rounded border px-2 py-1 text-[11px] font-semibold ${
+                  className={`rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${
                     selectedPiezas.includes(pieza)
-                      ? "border-[#005eb8] bg-[#005eb8] text-white"
-                      : "border-slate-300 text-slate-600"
+                      ? "border-[#2F58BC] bg-[#2F58BC] text-white"
+                      : "border-slate-300 text-slate-600 hover:border-[#3366FF] hover:bg-[#3366FF]/5"
                   } ${piezaModo !== "manual" ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   {pieza}
@@ -545,14 +822,18 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
           </>
         )}
       </div>
+      )}
 
       <button
         type="button"
         onClick={handleConfirm}
-        className="mt-3 w-full rounded-xl bg-[#005eb8] px-3 py-2 text-sm font-bold text-white"
+        className="mt-3 w-full rounded-xl bg-[#2F58BC] px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-[#3366FF]"
       >
         Confirmar y generar orden
       </button>
     </div>
   );
 }
+
+
+
