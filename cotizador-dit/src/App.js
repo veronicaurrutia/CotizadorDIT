@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import RehabilitacionSelector from "./RehabilitacionSelector";
 import logoDIT from "./img/logoDIT.jpeg";
-
-const QUICK_FILTERS = ["Todos", "Zirconio", "Disilicato", "Metal-Ceramica"];
 
 const COLOR_SWATCH = {
   A1: "#f7ead3",
@@ -147,21 +143,6 @@ function formatCLP(value) {
   });
 }
 
-function parseDias(tiempo) {
-  const matched = String(tiempo).match(/\d+/);
-  return matched ? Number(matched[0]) : 3;
-}
-
-function getAvailabilityStyle(days) {
-  if (days <= 1) {
-    return { label: "Express", className: "bg-emerald-100 text-emerald-700" };
-  }
-  if (days <= 3) {
-    return { label: "Estandar", className: "bg-amber-100 text-amber-700" };
-  }
-  return { label: "Programado", className: "bg-slate-200 text-slate-700" };
-}
-
 function createTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -169,19 +150,6 @@ function createTodayDate() {
 function createOrderNumber() {
   const stamp = Date.now().toString().slice(-6);
   return `DIT-${stamp}`;
-}
-
-function drawDitLogo(doc, x, y) {
-  doc.setFillColor(0, 94, 184);
-  doc.roundedRect(x, y, 92, 32, 6, 6, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("DIT", x + 12, y + 21);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text("Laboratorio Dental", x + 37, y + 21);
-  doc.setTextColor(0, 0, 0);
 }
 
 const MATERIAL_PRICES = {
@@ -325,38 +293,6 @@ export default function App() {
   const [emailModalError, setEmailModalError] = useState("");
   const [couponRevealed, setCouponRevealed] = useState(false);
   
-  const allTypes = useMemo(
-    () => ["Todos", ...new Set(productosFija.map((item) => item.tipoProducto))],
-    []
-  );
-
-  const allMaterials = useMemo(
-    () => ["Todos", ...new Set(productosFija.flatMap((item) => item.materiales))],
-    []
-  );
-
-  const masComprados = useMemo(
-    () => productosFija.filter((item) => item.masComprado).slice(0, 3),
-    []
-  );
-
-  const productosFiltrados = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    return productosFija.filter((item) => {
-      const byType = selectedType === "Todos" || item.tipoProducto === selectedType;
-      const byMaterial =
-        selectedMaterial === "Todos" || item.materiales.includes(selectedMaterial);
-      const byQuick = quickFilter === "Todos" || item.quickTag === quickFilter;
-      const byPrice = item.precioBase <= maxPrice;
-      const bySearch =
-        !term ||
-        item.nombre.toLowerCase().includes(term) ||
-        item.materiales.join(" ").toLowerCase().includes(term);
-
-      return byType && byMaterial && byQuick && byPrice && bySearch;
-    });
-  }, [search, selectedType, selectedMaterial, quickFilter, maxPrice]);
 
   const modalPrice = useMemo(() => {
     if (!activeProduct || !selectedModalMaterial) {
@@ -364,8 +300,6 @@ export default function App() {
     }
     return MATERIAL_PRICES[selectedModalMaterial] ?? activeProduct.precioBase;
   }, [activeProduct, selectedModalMaterial]);
-
-  const modalDays = 5;
 
   const modalAvailability = { label: "Listo en 5 dias habiles", className: "bg-blue-100 text-blue-700" };
   const modalEstimatedTotal = modalPrice * selectedQty;
@@ -382,15 +316,6 @@ export default function App() {
   // Calcular total con descuento si hay cupón aplicado
   const discountAmount = appliedCoupon ? Math.round(cartGrandTotal * appliedCoupon.discount) : 0;
   const finalTotal = cartGrandTotal - discountAmount;
-
-  const openProduct = (product) => {
-    setActiveProduct(product);
-    setSelectedColor(product.colores[0] ?? "A1");
-    setSelectedModalMaterial(product.materiales[0] ?? "");
-    setSelectedConnection("");
-    setSelectedQty(1);
-    setIsDetailOpen(true);
-  };
 
   const addToCart = () => {
     if (!isDetailOpen || !activeProduct || !selectedModalMaterial || selectedQty < 1) {
@@ -644,24 +569,9 @@ export default function App() {
     });
   };
 
-  const goToCart = () => {
-    setFormError("");
-    setFlowStep("cart");
-  };
-
   const goToMenu = () => {
     setFormError("");
     setFlowStep("selection");
-  };
-
-  const goToPatientForm = () => {
-    if (!cartItems.length && !currentOrder) {
-      setFormError("Debes agregar un producto al carrito o generar una orden para continuar.");
-      return;
-    }
-
-    setFormError("");
-    setFlowStep("patient");
   };
 
   const completePatientStep = () => {
@@ -674,146 +584,6 @@ export default function App() {
     setFormError("");
     setOrderConfirmed(true);
     setFlowStep("confirmation");
-  };
-
-  const emitQuote = () => {
-    const validationMessage = validatePatientData();
-    if (validationMessage) {
-      setFormError(validationMessage);
-      setFlowStep("patient");
-      return;
-    }
-
-    if (!cartItems.length) {
-      setFormError("Agrega al menos un producto al carrito para emitir la cotizacion.");
-      setFlowStep("cart");
-      return;
-    }
-
-    setFormError("");
-    setQuoteView(buildQuoteData());
-  };
-
-  const enviarCotizacion = () => {
-    if (!currentOrder) {
-      setFormError("Primero debes generar un numero de orden con la configuracion del producto.");
-      setFlowStep("selection");
-      return;
-    }
-
-    const payload = {
-      idOrden: currentOrder.idOrden,
-      paciente: {
-        ...patientData,
-        orden: currentOrder.idOrden,
-      },
-      configuracionProducto: currentOrder.producto,
-      piezas: currentOrder.piezas,
-      archivos: currentOrder.archivos.map((file) => ({
-        idArchivo: file.idArchivo,
-        idOrden: file.idOrden,
-        nombre: file.nombre,
-        tipo: file.tipo,
-        pesoBytes: file.pesoBytes,
-      })),
-      carrito: cartItems,
-    };
-
-    setSubmissionResult({
-      ok: true,
-      mensaje: "Cotizacion enviada correctamente.",
-      fechaEnvio: new Date().toLocaleString("es-CL"),
-      payload,
-    });
-    setFormError("");
-  };
-
-  const downloadQuotePdf = () => {
-    if (!cartItems.length) {
-      setFormError("Agrega al menos un producto al carrito para descargar la cotizacion.");
-      setFlowStep("cart");
-      return;
-    }
-
-    setFormError("");
-    const quoteData = buildQuoteData();
-    setQuoteView(quoteData);
-
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    let y = 46;
-
-    drawDitLogo(doc, 40, y - 20);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("Cotizacion DIT", 148, y);
-
-    y += 20;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Folio: ${quoteData.folio}`, 148, y);
-    doc.text(`Fecha emision: ${quoteData.emitida}`, 340, y);
-
-    y += 24;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("Datos del paciente", 40, y);
-
-    y += 16;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Fecha: ${quoteData.paciente.fecha || "-"}`, 40, y);
-    doc.text(`N de Orden: ${quoteData.paciente.orden || "-"}`, 280, y);
-
-    y += 14;
-    doc.text(`Doctor(a): ${quoteData.paciente.doctor || "-"}`, 40, y);
-    doc.text(`Paciente: ${quoteData.paciente.paciente || "-"}`, 280, y);
-
-    y += 14;
-    doc.text(`Rut Paciente: ${quoteData.paciente.rut || "-"}`, 40, y);
-    doc.text(`Telefono: ${quoteData.paciente.telefono || "-"}`, 280, y);
-
-    y += 14;
-    doc.text(`Correo electronico: ${quoteData.paciente.email || "-"}`, 40, y);
-
-    y += 24;
-    autoTable(doc, {
-      startY: y,
-      head: [["Producto", "Cant.", "Material", "Tipo de conexion", "Precio neto", "Subtotal"]],
-      body: quoteData.items.map((item) => [
-        item.name,
-        String(item.qty),
-        item.material,
-        item.connection || "-",
-        formatCLP(item.unitPrice),
-        formatCLP(item.total),
-      ]),
-      styles: { fontSize: 9, cellPadding: 5 },
-      headStyles: { fillColor: [0, 94, 184] },
-    });
-
-    const tableEndY = doc.lastAutoTable?.finalY ?? y + 120;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(`Neto: ${formatCLP(quoteData.subtotal)}`, 40, tableEndY + 24);
-    doc.text(`IVA (19%): ${formatCLP(quoteData.iva)}`, 40, tableEndY + 40);
-    
-    let finalY = tableEndY + 40;
-    
-    if (quoteData.cupon) {
-      finalY += 16;
-      doc.setTextColor(34, 139, 34);
-      doc.text(`Cupon aplicado (${quoteData.cupon.codigo}):`, 40, finalY);
-      doc.text(`-${formatCLP(quoteData.cupon.montoDescuento)}`, 320, finalY);
-      doc.setTextColor(0, 0, 0);
-      finalY += 16;
-      doc.text(`Total con descuento: ${formatCLP(quoteData.totalConDescuento)}`, 40, finalY);
-    } else {
-      finalY += 16;
-      doc.text(`Total: ${formatCLP(quoteData.total)}`, 40, finalY);
-    }
-
-    doc.save(`cotizacion-${quoteData.folio}.pdf`);
   };
 
   return (

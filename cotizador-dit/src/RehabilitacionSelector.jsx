@@ -179,7 +179,7 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
 
   // Derived — atornillados
   const atPilar = atornilladosPilar.opciones.find((p) => p.id === atPilarId);
-  const casosAtornillados = atornillados.casos ?? [];
+  const casosAtornillados = useMemo(() => atornillados.casos ?? [], [atornillados.casos]);
   const atornilladosPriceMatrix = useMemo(() => {
     return casosAtornillados.reduce((acc, caso) => {
       const materialKey = caso.coronaId ?? caso.pilarId;
