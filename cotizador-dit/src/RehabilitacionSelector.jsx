@@ -220,7 +220,9 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
   const requierePrecioByPiezaAtornillado = Boolean(atPrecioConfigCorona?.precioByPieza);
   const precioCoronaAtornillado = muestraCorona
     ? (requierePrecioByPiezaAtornillado
-      ? selectedPiezas.length * (atPrecioConfigCorona?.precio ?? 0)
+      ? (quiereElegirPiezas
+          ? selectedPiezas.length * (atPrecioConfigCorona?.precio ?? 0)
+          : (atPrecioConfigCorona?.precio ?? null))
       : (atPrecioConfigCorona?.precio ?? null))
     : null;
   const precioPilarPersonalizado = atPrecioConfigPilar
@@ -378,7 +380,7 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
           coronasPuente: requiereCamposPuente ? Number(cemCoronasPuente) : null,
           ponticosPuente: requiereCamposPuente ? Number(cemPonticosPuente) : null,
           color: casoCementado ? cemColor || null : null,
-          precio: requiereCamposPuente ? (puenteTotal ?? null) : requierePrecioByPieza ? (piezaTotal ?? null) : (casoCementado?.precio ?? null),
+          precio: requiereCamposPuente ? (puenteTotal ?? null) : requierePrecioByPieza ? (quiereElegirPiezas ? (piezaTotal ?? null) : (casoCementado?.precio ?? null)) : (casoCementado?.precio ?? null),
           despachoDias: casoCementado?.despachoDias ?? null,
           requiereCantidadEspecial: Boolean(casoCementado?.requiereCantidad),
           cantidadEspecial: casoCementado?.requiereCantidad ? Number(cemCantidadEspecial) : null,
@@ -535,7 +537,9 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
               ) : requierePrecioByPieza ? (
                 <>
                   <p className="font-semibold">Precio por pieza: {formatCLP(casoCementado.precio)}</p>
-                  {piezaTotal > 0 && <p className="font-bold mt-1">Total: {formatCLP(piezaTotal)}</p>}
+                  {quiereElegirPiezas && selectedPiezas.length > 0 && (
+                    <p className="font-bold mt-1">Total ({selectedPiezas.length} piezas): {formatCLP(piezaTotal)}</p>
+                  )}
                 </>
               ) : (
                 <p className="font-semibold">Precio: {formatCLP(casoCementado.precio)}</p>
@@ -692,7 +696,9 @@ export default function RehabilitacionSelector({ onConfirm, onError }) {
                   {requierePrecioByPiezaAtornillado ? (
                     <>
                       <p className="font-semibold">Precio por pieza: {formatCLP(atPrecioConfigCorona.precio ?? 0)}</p>
-                      {precioCoronaAtornillado > 0 && <p className="mt-1 font-bold">Total: {formatCLP(precioCoronaAtornillado)}</p>}
+                      {quiereElegirPiezas && selectedPiezas.length > 0 && (
+                        <p className="mt-1 font-bold">Total ({selectedPiezas.length} piezas): {formatCLP(precioCoronaAtornillado)}</p>
+                      )}
                     </>
                   ) : (
                     <p className="font-semibold">Precio: {formatCLP(atPrecioConfigCorona.precio ?? 0)}</p>

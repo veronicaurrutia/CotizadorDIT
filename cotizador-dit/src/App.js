@@ -318,6 +318,12 @@ export default function App() {
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponInput, setCouponInput] = useState("");
   const [couponMessage, setCouponMessage] = useState("");
+
+  // Modal de correo para cupón
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailModalInput, setEmailModalInput] = useState("");
+  const [emailModalError, setEmailModalError] = useState("");
+  const [couponRevealed, setCouponRevealed] = useState(false);
   
   const allTypes = useMemo(
     () => ["Todos", ...new Set(productosFija.map((item) => item.tipoProducto))],
@@ -501,6 +507,32 @@ export default function App() {
     setAppliedCoupon(null);
     setCouponInput("");
     setCouponMessage("");
+  };
+
+  const handleCotizarClick = () => {
+    setEmailModalInput(patientData.email || "");
+    setEmailModalError("");
+    setCouponRevealed(!!generatedCoupon);
+    setShowEmailModal(true);
+  };
+
+  const handleEmailModalSubmit = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailModalInput.trim())) {
+      setEmailModalError("Ingresa un correo electrónico válido.");
+      return;
+    }
+    updatePatientField("email", emailModalInput.trim());
+    if (!generatedCoupon) {
+      setGeneratedCoupon({ code: "BIENVENIDO10", discount: 0.10, email: emailModalInput.trim() });
+    }
+    setEmailModalError("");
+    setCouponRevealed(true);
+  };
+
+  const handleEmailModalContinue = () => {
+    setShowEmailModal(false);
+    setFlowStep("selection");
   };
 
   const buildQuoteData = () => ({
@@ -897,7 +929,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={completePatientStep}
+                        onClick={handleCotizarClick}
                         className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
                       >
                         Cotizar
@@ -1155,7 +1187,7 @@ export default function App() {
             <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 shadow-sm text-center">
               <div className="mb-6">
                 <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-emerald-200 flex items-center justify-center">
-                  <span className="text-3xl">?</span>
+                  <span className="text-3xl">✓</span>
                 </div>
                 <h2 className="text-2xl font-extrabold text-emerald-700">¡Orden Lista!</h2>
               </div>
@@ -1363,6 +1395,84 @@ export default function App() {
                               </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de correo para cupón */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            {!couponRevealed && (
+              <div key="step-email">
+                <div className="mb-5 text-center">
+                  <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[#2F58BC]/10">
+                    <span className="text-3xl">&#9993;</span>
+                  </div>
+                  <h3 className="text-xl font-extrabold text-slate-800">Ingresa tu correo</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Recibe un <span className="font-bold text-[#2F58BC]">cupon de 10% de descuento</span> al ingresar tu email.
+                  </p>
+                </div>
+
+                <input
+                  type="email"
+                  value={emailModalInput}
+                  onChange={(e) => setEmailModalInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleEmailModalSubmit()}
+                  placeholder="correo@ejemplo.com"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-[#2F58BC] focus:outline-none"
+                />
+                {emailModalError && (
+                  <p className="mt-2 text-xs font-semibold text-rose-600">{emailModalError}</p>
+                )}
+
+                <div className="mt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailModal(false)}
+                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEmailModalSubmit}
+                    className="flex-1 rounded-xl bg-[#2F58BC] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#3366FF]"
+                  >
+                    Obtener cupon
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {couponRevealed && (
+              <div key="step-cupon">
+                <div className="text-center">
+                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                    <span className="text-4xl">&#127881;</span>
+                  </div>
+                  <h3 className="text-xl font-extrabold text-emerald-700">Cupon obtenido!</h3>
+                  <p className="mt-1 text-sm text-slate-500">Usalo al finalizar tu compra para obtener el descuento</p>
+                </div>
+
+                <div className="mt-5 rounded-2xl border-2 border-dashed border-[#2F58BC] bg-[#2F58BC]/5 p-5 text-center">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#999999]">Codigo del cupon</p>
+                  <p className="mt-1 text-3xl font-extrabold tracking-wider text-[#2F58BC]">
+                    {generatedCoupon?.code}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-emerald-600">10% de descuento en tu compra</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleEmailModalContinue}
+                  className="mt-5 w-full rounded-xl bg-[#2F58BC] px-4 py-3 text-sm font-bold text-white hover:bg-[#3366FF]"
+                >
+                  Volver al cotizador
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
