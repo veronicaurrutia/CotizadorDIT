@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd cotizador-dit && npm install && npm run build",
+  "outputDirectory": "cotizador-dit/build",
+  "installCommand": "echo skip"
+}
